@@ -4,32 +4,31 @@ Project-specific rules for `teamspeak-stream-live`. See `README.md` for what the
 
 ## Commands
 
-- Run `bun run typecheck`, `bun run lint`, `bun run format`, and `bun test` before committing.
-- `bun run build` compiles the standalone `teamspeak-stream-live` binary.
-- Use `bun`/`bunx`, never `npm`/`node`.
+- Run `gofmt -l .` (fix with `gofmt -w .`), `go vet ./...`, and `go test ./...` before committing.
+- `go build .` compiles the standalone `teamspeak-stream-live` binary.
+- Requires Go 1.24+.
 
 ## Code style
 
-- Formatting and linting are owned by oxfmt/oxlint (config from `@timche/oxc-configs`). Never hand-format — run `bun run format`. Don't loosen the oxc configs to dodge a rule.
-- oxlint forbids non-null assertions (`!`) and requires braces on every `if`/`for` — narrow types instead of asserting.
-- Import local modules with the `.ts` extension: `import { logger } from "./logger.ts"`.
-- Reach for a well-known library before hand-rolling (why logging is `consola`, HTTP is `ky` + `zod`).
+- Formatting is owned by `gofmt`. Never hand-format — run `gofmt -w .`.
+- Prefer the standard library; reach for a well-known library before hand-rolling (why HTTP is `go-resty`, config is `caarlos0/env`, TeamSpeak is `multiplay/go-ts3`, backoff is `cenkalti/backoff`).
+- Keep application packages under `internal/`; `main.go` at the root is the only entrypoint.
 
 ## Conventions
 
-- **Logging:** `import { logger } from "./logger.ts"` — one shared consola instance. No logger factory; don't pass loggers through constructors.
-- **HTTP:** `ky` with a `zod` schema via `.json(schema)`; don't hand-write `fetch` + parsing.
-- **Config:** all env parsing lives in `src/config.ts` (`required`/`optional`/`integer` helpers). Every setting must be env-configurable, and secrets are never logged.
-- **Watcher:** keep it stateless — each poll re-reads actual state from TeamSpeak and diffs it against Broadcast Box. Don't add in-memory tracking.
-- **Tests:** co-located as `src/*.test.ts`; set `logger.level = 0` to keep output quiet.
+- **Logging:** `import ".../internal/logger"` and use `logger.Log` — one shared `slog.Logger`. No logger factory; don't pass loggers through constructors.
+- **HTTP:** a `go-resty` client with a typed struct decoded via `encoding/json`; don't hand-write `net/http` + parsing.
+- **Config:** all env parsing lives in `internal/config`. Every setting must be env-configurable, and secrets are never logged.
+- **Watcher:** keep it stateless — each poll re-reads actual state from TeamSpeak and diffs it against Broadcast Box/Twitch. Don't add in-memory tracking.
+- **Tests:** co-located as `*_test.go`; call `logger.Discard()` to keep output quiet.
 
 ## Gotchas
 
-- The Docker build installs with `--ignore-scripts` so the lefthook `prepare` hook doesn't run (no `.git` in the build context). Keep it.
+- The Dockerfile cross-compiles with `CGO_ENABLED=0` and ships on `gcr.io/distroless/static`, which provides the CA certificates needed for Twitch's HTTPS API. Don't switch to a base image without CA certs.
 - `docker-publish.yml` publishes on `v*` tags only, not on pushes to `main`.
 
 ## Git
 
 - Work directly on `main`.
-- Never commit secrets, real/private hostnames (use `example.com` placeholders), or build artifacts (`/teamspeak-stream-live`, `*.map`).
+- Never commit secrets, real/private hostnames (use `example.com` placeholders), or the built binary (`/teamspeak-stream-live`).
 - If sensitive data was already committed, scrub it from history and force-push — don't just add a delete commit.

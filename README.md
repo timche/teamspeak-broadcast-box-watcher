@@ -88,29 +88,27 @@ A "Required" value of _Broadcast Box_ or _Twitch_ means the variable is required
 
 ## Development
 
-Requires [Bun](https://bun.sh).
+Requires [Go](https://go.dev) 1.24+.
 
 ```sh
-bun install            # also installs the git hooks (lefthook)
 cp .env.example .env   # fill in the values
 
-bun run dev            # run with reload
-bun run start          # run once
-bun run typecheck      # tsc --noEmit
-bun run lint           # oxlint
-bun run lint:fix       # oxlint --fix
-bun run format         # oxfmt (write) / bun run format:check
-bun test               # unit tests
-bun run build          # compile a standalone ./teamspeak-stream-live binary
+go run .               # run once
+gofmt -w .             # format
+go vet ./...           # static checks
+go test ./...          # unit tests
+go build .             # compile a standalone ./teamspeak-stream-live binary
 ```
 
-Tooling: [`ky`](https://github.com/sindresorhus/ky) + [`zod`](https://zod.dev) for validated HTTP, [`consola`](https://github.com/unjs/consola) for logging, and [`@timche/oxc-configs`](https://www.npmjs.com/package/@timche/oxc-configs) (oxlint + oxfmt) for linting/formatting.
+The env vars in `.env` need to be exported into the shell (e.g. `set -a; . ./.env; set +a`) before `go run .`.
 
-A [lefthook](https://lefthook.dev) `pre-commit` hook runs oxfmt and `oxlint --fix` on staged files and re-stages the results. It installs automatically via the `prepare` script on `bun install`. CI (`.github/workflows/ci.yml`) runs typecheck, lint, format check, and tests on every push and pull request.
+Tooling: [`go-resty`](https://github.com/go-resty/resty) for HTTP (with retries), [`caarlos0/env`](https://github.com/caarlos0/env) for env config, [`multiplay/go-ts3`](https://github.com/multiplay/go-ts3) for the TeamSpeak ServerQuery protocol, [`cenkalti/backoff`](https://github.com/cenkalti/backoff) for reconnect backoff, and the standard library's `encoding/json` and `log/slog`.
+
+CI (`.github/workflows/ci.yml`) runs `gofmt` check, `go vet`, tests, and a build on every push and pull request.
 
 ## Docker
 
-The image compiles the app into a single self-contained binary (embedding the Bun runtime) and ships it on a minimal `debian:bookworm-slim` base.
+The image cross-compiles the app into a single static binary and ships it on a minimal `gcr.io/distroless/static` base (which provides CA certificates for Twitch's HTTPS API and a non-root user).
 
 ```sh
 docker build -t teamspeak-stream-live .

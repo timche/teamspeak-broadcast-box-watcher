@@ -1,9 +1,5 @@
-# Dependencies
-node_modules/
-
-# Compiled binary + build artifacts
+# Compiled binary
 /teamspeak-stream-live
-*.map
 
 # Environment
 .env

@@ -1,40 +1,28 @@
 # syntax=docker/dockerfile:1
 
-# ---- Build stage: compile a single self-contained binary with Bun ----
-FROM oven/bun:1 AS build
+# ---- Build stage: compile a static binary ----
+# Pinned to the build platform and cross-compiled to the target arch, so the Go
+# toolchain never runs under QEMU emulation for arm64.
+FROM --platform=$BUILDPLATFORM golang:1-alpine AS build
 WORKDIR /app
 
-# Install dependencies against the lockfile first for better layer caching.
-# --ignore-scripts skips the `prepare` (lefthook install) hook, which needs a
-# .git dir that isn't present in the build context.
-COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile --ignore-scripts
+# Download modules first for better layer caching.
+COPY go.mod go.sum ./
+RUN go mod download
 
-# Compile the app into a standalone executable that embeds the Bun runtime,
-# so the runtime image needs neither Bun nor node_modules. The `build` script
-# marks `cpu-features` (an optional ssh2 native addon that isn't built here)
-# external so the bundler doesn't resolve the missing `.node` binary.
-COPY tsconfig.json ./
-COPY src ./src
-RUN bun run build
+COPY . .
 
-# ---- Runtime stage: minimal glibc base with just the binary ----
-FROM debian:bookworm-slim AS runtime
-WORKDIR /app
+ARG TARGETOS
+ARG TARGETARCH
+# CGO disabled -> a fully static binary with no libc dependency.
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build -trimpath -ldflags="-s -w" -o /teamspeak-stream-live .
 
-# No ca-certificates needed: the watcher reaches Broadcast Box over the private
-# network via plain HTTP (TLS is terminated at the reverse proxy for public
-# traffic), and Bun's compiled binary bundles its own root store for the rare
-# case that BROADCAST_BOX_API_URL points at a public-CA HTTPS endpoint.
-COPY --from=build /app/teamspeak-stream-live /usr/local/bin/teamspeak-stream-live
-
-# Run JavaScriptCore in low-memory mode: a smaller, slower-growing heap and more
-# frequent GC. The reconciler is I/O-bound and idle between polls, so the CPU
-# trade-off is irrelevant; it just keeps steady-state RSS down. Standalone Bun
-# executables read runtime flags from BUN_OPTIONS, so no recompile is needed.
-ENV BUN_OPTIONS="--smol"
-
-# Run as the non-root user provided by the base image.
-USER nobody
-
+# ---- Runtime stage: distroless static ----
+# Unlike the previous Bun binary, a static Go binary bundles no CA roots, and
+# Twitch is reached over public HTTPS. distroless/static ships ca-certificates
+# and a nonroot user while staying ~2 MB.
+FROM gcr.io/distroless/static:nonroot AS runtime
+COPY --from=build /teamspeak-stream-live /usr/local/bin/teamspeak-stream-live
+USER nonroot
 ENTRYPOINT ["/usr/local/bin/teamspeak-stream-live"]
