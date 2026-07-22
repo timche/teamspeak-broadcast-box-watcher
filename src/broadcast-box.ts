@@ -10,13 +10,19 @@ import { logger } from "./logger.ts";
 const streamSessionSchema = z
   .object({
     streamKey: z.string().optional(),
-    streamStart: z.union([z.number(), z.string()]).optional(),
     videoTracks: z.array(z.unknown()).optional(),
     audioTracks: z.array(z.unknown()).optional(),
   })
   .loose();
 
-const statusSchema = z.array(streamSessionSchema);
+/**
+ * The admin status endpoint returns a JSON array of sessions, or `null` when
+ * no streams exist at all. Normalise the `null` case to an empty array.
+ */
+const statusSchema = z
+  .array(streamSessionSchema)
+  .nullable()
+  .transform((sessions) => sessions ?? []);
 
 type StreamSession = z.infer<typeof streamSessionSchema>;
 
@@ -24,29 +30,17 @@ function hasEntries(value: readonly unknown[] | undefined): boolean {
   return value !== undefined && value.length > 0;
 }
 
-function isTruthyTimestamp(value: number | string | undefined): boolean {
-  if (typeof value === "number") {
-    return value > 0;
-  }
-
-  if (typeof value === "string") {
-    return value.trim() !== "" && value !== "0";
-  }
-
-  return false;
-}
-
 /**
- * A stream counts as live when it exposes a stream key and shows an active
- * publisher — signalled by a start timestamp or by any received media track.
+ * A stream counts as live when it exposes a stream key and is actively
+ * publishing — signalled by any received media track. `streamStart` is set as
+ * soon as a stream key is provisioned (even while offline), so it can't be
+ * used to decide liveness.
  */
 function isLive(state: StreamSession): state is StreamSession & { streamKey: string } {
   return (
     typeof state.streamKey === "string" &&
     state.streamKey.trim() !== "" &&
-    (isTruthyTimestamp(state.streamStart) ||
-      hasEntries(state.videoTracks) ||
-      hasEntries(state.audioTracks))
+    (hasEntries(state.videoTracks) || hasEntries(state.audioTracks))
   );
 }
 
