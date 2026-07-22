@@ -49,19 +49,22 @@ The `BROADCAST_BOX_ADMIN_TOKEN` value is the token in cleartext; the watcher sen
 Requires [Bun](https://bun.sh).
 
 ```sh
-bun install
+bun install            # also installs the git hooks (lefthook)
 cp .env.example .env   # fill in the values
 
 bun run dev            # run with reload
 bun run start          # run once
 bun run typecheck      # tsc --noEmit
 bun run lint           # oxlint
+bun run lint:fix       # oxlint --fix
 bun run format         # oxfmt (write) / bun run format:check
 bun test               # unit tests
 bun run build          # compile a standalone ./watcher binary
 ```
 
 Tooling: [`ky`](https://github.com/sindresorhus/ky) + [`zod`](https://zod.dev) for validated HTTP, [`consola`](https://github.com/unjs/consola) for logging, and [`@timche/oxc-configs`](https://www.npmjs.com/package/@timche/oxc-configs) (oxlint + oxfmt) for linting/formatting.
+
+A [lefthook](https://lefthook.dev) `pre-commit` hook runs oxfmt and `oxlint --fix` on staged files and re-stages the results. It installs automatically via the `prepare` script on `bun install`.
 
 ## Docker
 

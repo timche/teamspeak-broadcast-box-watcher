@@ -5,8 +5,10 @@ FROM oven/bun:1 AS build
 WORKDIR /app
 
 # Install dependencies against the lockfile first for better layer caching.
+# --ignore-scripts skips the `prepare` (lefthook install) hook, which needs a
+# .git dir that isn't present in the build context.
 COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile
+RUN bun install --frozen-lockfile --ignore-scripts
 
 # Compile the app into a standalone executable that embeds the Bun runtime,
 # so the runtime image needs neither Bun nor node_modules.
