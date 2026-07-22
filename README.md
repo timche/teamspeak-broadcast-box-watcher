@@ -3,7 +3,7 @@
 Watches a [Broadcast Box](https://github.com/Glimesh/broadcast-box) instance and, whenever a TeamSpeak user is **live**, gives that user two things:
 
 1. Membership in a shared **live group** (`LIVE_GROUP_NAME`, default `🔴`) that the service auto-creates with _"show name in tree: before"_ — so the user shows up as e.g. `🔴 alice` in the channel tree.
-2. Their own **stream-link group** named `▶️ <host>/<username>` (e.g. `▶️ stream.example.com/alice`), so other users can see the stream link in that user's server-group list.
+2. Their own **stream-link group** named `📺 <host>/<username>` (e.g. `📺 stream.example.com/alice`), so other users can see the stream link in that user's server-group list.
 
 When the stream stops, both are removed again.
 
@@ -39,7 +39,7 @@ Everything is configured via environment variables (see [`.env.example`](./.env.
 | `TEAMSPEAK_QUERY_NICKNAME`  |          | `bbox-ts-live` | Nickname the query client connects with                                                                                          |
 | `POLL_INTERVAL_MS`          |          | `10000`        | Reconcile interval in milliseconds                                                                                               |
 | `LIVE_GROUP_NAME`           |          | `🔴`           | Name of the shared live group (auto-created, shown before the nickname in the tree)                                              |
-| `STREAM_GROUP_PREFIX`       |          | `▶️`           | Prefix for the per-user stream-link groups                                                                                       |
+| `STREAM_GROUP_PREFIX`       |          | `📺`           | Prefix for the per-user stream-link groups                                                                                       |
 | `LOG_LEVEL`                 |          | `info`         | `debug` \| `info` \| `warn` \| `error`                                                                                           |
 
 The `BROADCAST_BOX_ADMIN_TOKEN` value is the token in cleartext; the watcher sends it as `Authorization: Bearer <base64(token)>`.
@@ -94,7 +94,7 @@ Authentication uses the built-in `GITHUB_TOKEN` (via the workflow's `packages: w
 1. Start the stack: `docker compose -f docker-compose.example.yml up`.
 2. Connect to the TeamSpeak server with a nickname (e.g. `azn`).
 3. Start streaming to Broadcast Box with the **same** stream key (`azn`).
-4. Within one poll interval the tree shows `🔴 azn`, and inspecting the user reveals the `▶️ <host>/azn` group.
+4. Within one poll interval the tree shows `🔴 azn`, and inspecting the user reveals the `📺 <host>/azn` group.
 5. Stop the stream — both are removed on the next poll.
 
 ## License

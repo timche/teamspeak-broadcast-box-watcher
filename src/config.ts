@@ -55,7 +55,7 @@ export const configSchema = z
     TEAMSPEAK_QUERY_NICKNAME: optionalEnv("bbox-ts-live"),
     POLL_INTERVAL_MS: integerEnv("POLL_INTERVAL_MS", 10_000),
     LIVE_GROUP_NAME: optionalEnv("🔴"),
-    STREAM_GROUP_PREFIX: optionalEnv("▶️"),
+    STREAM_GROUP_PREFIX: optionalEnv("📺"),
   })
   .transform((env) => ({
     broadcastBox: {
@@ -77,7 +77,7 @@ export const configSchema = z
     pollIntervalMs: env.POLL_INTERVAL_MS,
     /** Name of the shared "live" group (shown before the nickname in the tree). */
     liveGroupName: env.LIVE_GROUP_NAME,
-    /** Prefix for the per-user stream-link groups, e.g. `▶️ stream.example.com/alice`. */
+    /** Prefix for the per-user stream-link groups, e.g. `📺 stream.example.com/alice`. */
     streamGroupPrefix: env.STREAM_GROUP_PREFIX,
   }));
 
