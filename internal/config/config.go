@@ -98,16 +98,20 @@ type raw struct {
 	PollIntervalMs int `env:"POLL_INTERVAL_MS" envDefault:"10000"`
 }
 
-// Load validates os.Environ and maps it into a Config, or returns an error
-// describing what is missing or invalid.
+// Load validates the process environment and maps it into a Config.
 func Load() (Config, error) {
-	origEnv := env.ToMap(os.Environ())
+	return Parse(env.ToMap(os.Environ()))
+}
 
+// Parse validates the given environment map and maps it into a Config, or
+// returns an error describing what is missing or invalid. Taking the environment
+// as an argument keeps it testable without mutating the process environment.
+func Parse(environ map[string]string) (Config, error) {
 	// blankToUndefined: whitespace-only values are treated as unset so that
 	// defaults apply and required variables report as missing. The message
 	// templates are exempt (a blank template means "disabled").
-	parseEnv := make(map[string]string, len(origEnv))
-	for key, value := range origEnv {
+	parseEnv := make(map[string]string, len(environ))
+	for key, value := range environ {
 		if strings.TrimSpace(value) == "" {
 			continue
 		}
@@ -152,7 +156,7 @@ func Load() (Config, error) {
 			PublicStreamHost:    stripHost(r.PublicStreamHost),
 			LiveGroupName:       r.LiveGroupName,
 			StreamGroupPrefix:   r.StreamGroupPrefix,
-			LiveMessageTemplate: messageTemplate(origEnv, liveMessageTemplateKey),
+			LiveMessageTemplate: messageTemplate(environ, liveMessageTemplateKey),
 		}
 	}
 
@@ -163,7 +167,7 @@ func Load() (Config, error) {
 			LiveGroupName:       r.TwitchLiveGroupName,
 			TwitchGroupPrefix:   r.TwitchGroupPrefix,
 			PublicTwitchHost:    "twitch.tv",
-			LiveMessageTemplate: messageTemplate(origEnv, twitchMessageTemplateKey),
+			LiveMessageTemplate: messageTemplate(environ, twitchMessageTemplateKey),
 		}
 	}
 
@@ -198,7 +202,7 @@ func validateFeatures(r raw) error {
 		}
 	}
 	if broadcastBoxSet > 0 && broadcastBoxSet < len(broadcastBoxVars) {
-		return fmt.Errorf("Broadcast Box is partially configured; also set: %s", strings.Join(broadcastBoxMissing, ", "))
+		return fmt.Errorf("broadcast box is partially configured; also set: %s", strings.Join(broadcastBoxMissing, ", "))
 	}
 
 	twitchSet := 0
@@ -209,7 +213,7 @@ func validateFeatures(r raw) error {
 		twitchSet++
 	}
 	if twitchSet == 1 {
-		return fmt.Errorf("TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET must be set together")
+		return fmt.Errorf("set both TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET together")
 	}
 
 	if broadcastBoxSet == 0 && twitchSet == 0 {

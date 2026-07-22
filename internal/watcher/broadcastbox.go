@@ -18,14 +18,14 @@ type StreamKeySource interface {
 
 // BroadcastBoxTeamSpeak is the subset of the TeamSpeak manager this watcher uses.
 type BroadcastBoxTeamSpeak interface {
-	ListGroupMemberDbids(sgid string) (map[string]struct{}, error)
-	ListGroupsByPrefix(prefix, excludeSgid string) ([]teamspeak.ServerGroupRef, error)
-	ListClients() ([]teamspeak.ClientInfo, error)
-	SendChannelMessage(channelID, text string) error
-	AddClientToGroup(databaseID, sgid string) error
-	RemoveClientFromGroup(databaseID, sgid string) error
-	CreateGroupAndAssign(name, databaseID string) (string, error)
-	DeleteGroup(group teamspeak.ServerGroupRef) error
+	ListGroupMemberDbids(ctx context.Context, sgid string) (map[string]struct{}, error)
+	ListGroupsByPrefix(ctx context.Context, prefix, excludeSgid string) ([]teamspeak.ServerGroupRef, error)
+	ListClients(ctx context.Context) ([]teamspeak.ClientInfo, error)
+	SendChannelMessage(ctx context.Context, channelID, text string) error
+	AddClientToGroup(ctx context.Context, databaseID, sgid string) error
+	RemoveClientFromGroup(ctx context.Context, databaseID, sgid string) error
+	CreateGroupAndAssign(ctx context.Context, name, databaseID string) (string, error)
+	DeleteGroup(ctx context.Context, group teamspeak.ServerGroupRef) error
 }
 
 // BroadcastBoxOptions configures a BroadcastBoxWatcher.
@@ -78,11 +78,11 @@ func (w *BroadcastBoxWatcher) Reconcile(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	currentMembers, err := w.ts.ListGroupMemberDbids(w.liveGroupSgid)
+	currentMembers, err := w.ts.ListGroupMemberDbids(ctx, w.liveGroupSgid)
 	if err != nil {
 		return err
 	}
-	existingStreamGroups, err := w.ts.ListGroupsByPrefix(w.streamGroupNamePrefix(), w.liveGroupSgid)
+	existingStreamGroups, err := w.ts.ListGroupsByPrefix(ctx, w.streamGroupNamePrefix(), w.liveGroupSgid)
 	if err != nil {
 		return err
 	}
@@ -90,12 +90,12 @@ func (w *BroadcastBoxWatcher) Reconcile(ctx context.Context) error {
 	// Nothing is live: clear the shared group and all per-user groups, and skip
 	// the (larger) client list entirely.
 	if len(liveStreamKeys) == 0 {
-		w.removeMembers(currentMembers)
-		w.deleteGroups(existingStreamGroups)
+		w.removeMembers(ctx, currentMembers)
+		w.deleteGroups(ctx, existingStreamGroups)
 		return nil
 	}
 
-	clients, err := w.ts.ListClients()
+	clients, err := w.ts.ListClients(ctx)
 	if err != nil {
 		return err
 	}
@@ -122,45 +122,45 @@ func (w *BroadcastBoxWatcher) Reconcile(ctx context.Context) error {
 		desiredStreamGroups[w.streamGroupName(streamKey)] = user
 	}
 
-	w.reconcileSharedMembership(currentMembers, desiredMembers)
-	w.reconcileStreamGroups(existingStreamGroups, desiredStreamGroups)
+	w.reconcileSharedMembership(ctx, currentMembers, desiredMembers)
+	w.reconcileStreamGroups(ctx, existingStreamGroups, desiredStreamGroups)
 	return nil
 }
 
 // Cleanup empties the shared group and deletes per-user groups (best-effort).
-func (w *BroadcastBoxWatcher) Cleanup() error {
-	members, err := w.ts.ListGroupMemberDbids(w.liveGroupSgid)
+func (w *BroadcastBoxWatcher) Cleanup(ctx context.Context) error {
+	members, err := w.ts.ListGroupMemberDbids(ctx, w.liveGroupSgid)
 	if err != nil {
 		return err
 	}
-	w.removeMembers(members)
+	w.removeMembers(ctx, members)
 
-	groups, err := w.ts.ListGroupsByPrefix(w.streamGroupNamePrefix(), w.liveGroupSgid)
+	groups, err := w.ts.ListGroupsByPrefix(ctx, w.streamGroupNamePrefix(), w.liveGroupSgid)
 	if err != nil {
 		return err
 	}
-	w.deleteGroups(groups)
+	w.deleteGroups(ctx, groups)
 	return nil
 }
 
-func (w *BroadcastBoxWatcher) reconcileSharedMembership(current map[string]struct{}, desired map[string]liveUser) {
+func (w *BroadcastBoxWatcher) reconcileSharedMembership(ctx context.Context, current map[string]struct{}, desired map[string]liveUser) {
 	for databaseID, user := range desired {
 		if _, ok := current[databaseID]; ok {
 			continue
 		}
-		if err := w.ts.AddClientToGroup(databaseID, w.liveGroupSgid); err != nil {
+		if err := w.ts.AddClientToGroup(ctx, databaseID, w.liveGroupSgid); err != nil {
 			logger.Log.Error("Broadcast Box failed to add to live group", "dbid", databaseID, "error", err)
 			continue
 		}
 		logger.Log.Info("Broadcast Box added to the live group", "dbid", databaseID)
-		w.announce(user)
+		w.announce(ctx, user)
 	}
 
 	for databaseID := range current {
 		if _, ok := desired[databaseID]; ok {
 			continue
 		}
-		if err := w.ts.RemoveClientFromGroup(databaseID, w.liveGroupSgid); err != nil {
+		if err := w.ts.RemoveClientFromGroup(ctx, databaseID, w.liveGroupSgid); err != nil {
 			logger.Log.Error("Broadcast Box failed to remove from live group", "dbid", databaseID, "error", err)
 			continue
 		}
@@ -168,7 +168,7 @@ func (w *BroadcastBoxWatcher) reconcileSharedMembership(current map[string]struc
 	}
 }
 
-func (w *BroadcastBoxWatcher) reconcileStreamGroups(existing []teamspeak.ServerGroupRef, desired map[string]liveUser) {
+func (w *BroadcastBoxWatcher) reconcileStreamGroups(ctx context.Context, existing []teamspeak.ServerGroupRef, desired map[string]liveUser) {
 	existingNames := make(map[string]struct{}, len(existing))
 	var stale []teamspeak.ServerGroupRef
 	for _, group := range existing {
@@ -177,43 +177,43 @@ func (w *BroadcastBoxWatcher) reconcileStreamGroups(existing []teamspeak.ServerG
 			stale = append(stale, group)
 		}
 	}
-	w.deleteGroups(stale)
+	w.deleteGroups(ctx, stale)
 
 	for name, user := range desired {
 		if _, ok := existingNames[name]; ok {
 			continue
 		}
-		if _, err := w.ts.CreateGroupAndAssign(name, user.databaseID); err != nil {
+		if _, err := w.ts.CreateGroupAndAssign(ctx, name, user.databaseID); err != nil {
 			logger.Log.Error("Broadcast Box failed to create/assign stream group", "streamKey", user.streamKey, "error", err)
 		}
 	}
 }
 
-func (w *BroadcastBoxWatcher) announce(user liveUser) {
+func (w *BroadcastBoxWatcher) announce(ctx context.Context, user liveUser) {
 	if w.opts.LiveMessageTemplate == "" {
 		return
 	}
 	text := strings.ReplaceAll(w.opts.LiveMessageTemplate, "{nickname}", user.nickname)
 	text = strings.ReplaceAll(text, "{link}", w.streamLink(user.streamKey))
 
-	if err := w.ts.SendChannelMessage(user.channelID, text); err != nil {
+	if err := w.ts.SendChannelMessage(ctx, user.channelID, text); err != nil {
 		logger.Log.Error("Broadcast Box failed to announce", "nickname", user.nickname, "error", err)
 		return
 	}
 	logger.Log.Info("Broadcast Box announced live", "nickname", user.nickname, "channel", user.channelID)
 }
 
-func (w *BroadcastBoxWatcher) removeMembers(databaseIDs map[string]struct{}) {
+func (w *BroadcastBoxWatcher) removeMembers(ctx context.Context, databaseIDs map[string]struct{}) {
 	for databaseID := range databaseIDs {
-		if err := w.ts.RemoveClientFromGroup(databaseID, w.liveGroupSgid); err != nil {
+		if err := w.ts.RemoveClientFromGroup(ctx, databaseID, w.liveGroupSgid); err != nil {
 			logger.Log.Error("Broadcast Box failed to remove from live group", "dbid", databaseID, "error", err)
 		}
 	}
 }
 
-func (w *BroadcastBoxWatcher) deleteGroups(groups []teamspeak.ServerGroupRef) {
+func (w *BroadcastBoxWatcher) deleteGroups(ctx context.Context, groups []teamspeak.ServerGroupRef) {
 	for _, group := range groups {
-		if err := w.ts.DeleteGroup(group); err != nil {
+		if err := w.ts.DeleteGroup(ctx, group); err != nil {
 			logger.Log.Error("Broadcast Box failed to delete group", "name", group.Name, "error", err)
 		}
 	}

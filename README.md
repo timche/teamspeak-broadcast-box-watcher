@@ -88,7 +88,7 @@ A "Required" value of _Broadcast Box_ or _Twitch_ means the variable is required
 
 ## Development
 
-Requires [Go](https://go.dev) 1.24+.
+Requires [Go](https://go.dev) 1.25+.
 
 ```sh
 cp .env.example .env   # fill in the values
@@ -102,7 +102,7 @@ go build .             # compile a standalone ./teamspeak-stream-live binary
 
 The env vars in `.env` need to be exported into the shell (e.g. `set -a; . ./.env; set +a`) before `go run .`.
 
-Tooling: [`go-resty`](https://github.com/go-resty/resty) for HTTP (with retries), [`caarlos0/env`](https://github.com/caarlos0/env) for env config, [`multiplay/go-ts3`](https://github.com/multiplay/go-ts3) for the TeamSpeak ServerQuery protocol, [`cenkalti/backoff`](https://github.com/cenkalti/backoff) for reconnect backoff, and the standard library's `encoding/json` and `log/slog`.
+Tooling: [`nicklaw5/helix`](https://github.com/nicklaw5/helix) for the Twitch Helix API, [`go-resty`](https://github.com/go-resty/resty) for the Broadcast Box HTTP client, [`caarlos0/env`](https://github.com/caarlos0/env) for env config, [`multiplay/go-ts3`](https://github.com/multiplay/go-ts3) for the TeamSpeak ServerQuery protocol, [`cenkalti/backoff`](https://github.com/cenkalti/backoff) for reconnect backoff, and the standard library's `encoding/json` and `log/slog`. Linting/formatting via `gofmt` + [`golangci-lint`](https://golangci-lint.run).
 
 CI (`.github/workflows/ci.yml`) runs `gofmt` check, `go vet`, tests, and a build on every push and pull request.
 

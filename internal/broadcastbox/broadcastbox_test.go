@@ -1,20 +1,28 @@
-package broadcastbox
+package broadcastbox_test
 
 import (
 	"context"
 	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
+	"github.com/timche/teamspeak-stream-live/internal/broadcastbox"
 	"github.com/timche/teamspeak-stream-live/internal/logger"
 )
 
-func init() { logger.Discard() }
+func TestMain(m *testing.M) {
+	logger.Discard()
+	os.Exit(m.Run())
+}
 
-func clientFor(url string) *Client {
-	return New(Options{APIURL: url, Authorization: "Bearer " + base64.StdEncoding.EncodeToString([]byte("s3cr3t"))})
+func clientFor(url string) *broadcastbox.Client {
+	return broadcastbox.New(broadcastbox.Options{
+		APIURL:        url,
+		Authorization: "Bearer " + base64.StdEncoding.EncodeToString([]byte("s3cr3t")),
+	})
 }
 
 func TestFetchLiveStreamKeysSendsBearerAndFilters(t *testing.T) {

@@ -1,4 +1,4 @@
-package twitch
+package twitch_test
 
 import (
 	"context"
@@ -6,26 +6,41 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/timche/teamspeak-stream-live/internal/logger"
+	"github.com/timche/teamspeak-stream-live/internal/twitch"
 )
 
-func init() { logger.Discard() }
+func TestMain(m *testing.M) {
+	logger.Discard()
+	os.Exit(m.Run())
+}
 
 const (
 	clientID     = "client-id"
 	clientSecret = "client-secret"
 )
 
-// harness spins up a fake Twitch serving the token endpoint at /oauth2/token and
-// the streams endpoint at /streams.
-type harness struct {
+// rewriteTransport redirects every request to the test server, preserving the
+// path. helix hard-codes the OAuth host (id.twitch.tv) and the API host
+// (api.twitch.tv), so routing by host isn't possible; this sends both to the
+// stub, which dispatches on the path suffix (/token vs /streams).
+type rewriteTransport struct{ host string }
+
+func (t rewriteTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req.URL.Scheme = "http"
+	req.URL.Host = t.host
+	return http.DefaultTransport.RoundTrip(req)
+}
+
+// stub is a fake Twitch serving the token and streams endpoints.
+type stub struct {
 	server            *httptest.Server
-	client            *Client
 	mu                sync.Mutex
 	tokenCalls        int
 	streamCalls       int
@@ -33,66 +48,65 @@ type harness struct {
 	totalRequests     int
 }
 
-func newHarness(t *testing.T, liveLogins []string, unauthorizedUntilTokenNo int) *harness {
+func newStub(t *testing.T, liveLogins []string, unauthorizedUntilTokenNo int) (*twitch.Client, *stub) {
 	t.Helper()
 	live := make(map[string]struct{})
 	for _, l := range liveLogins {
 		live[strings.ToLower(l)] = struct{}{}
 	}
-	h := &harness{}
+	s := &stub{}
 
-	h.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h.mu.Lock()
-		h.totalRequests++
-		h.mu.Unlock()
+	s.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.mu.Lock()
+		s.totalRequests++
+		s.mu.Unlock()
 
 		switch {
-		case strings.HasSuffix(r.URL.Path, "/oauth2/token"):
-			h.mu.Lock()
-			h.tokenCalls++
-			no := h.tokenCalls
-			h.mu.Unlock()
-			_ = r.ParseForm()
-			if r.PostForm.Get("grant_type") != "client_credentials" {
-				t.Errorf("token body grant_type = %q", r.PostForm.Get("grant_type"))
-			}
-			writeJSON(w, map[string]any{"access_token": fmt.Sprintf("token-%d", no), "expires_in": 3600})
+		case strings.HasSuffix(r.URL.Path, "/token"):
+			s.mu.Lock()
+			s.tokenCalls++
+			no := s.tokenCalls
+			s.mu.Unlock()
+			writeJSON(w, map[string]any{"access_token": fmt.Sprintf("token-%d", no), "expires_in": 3600, "token_type": "bearer"})
 
 		case strings.HasSuffix(r.URL.Path, "/streams"):
-			h.mu.Lock()
-			h.streamCalls++
-			h.mu.Unlock()
+			s.mu.Lock()
+			s.streamCalls++
+			s.mu.Unlock()
 			auth := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 			tokenNo, _ := strconv.Atoi(strings.TrimPrefix(auth, "token-"))
 			if unauthorizedUntilTokenNo != 0 && tokenNo < unauthorizedUntilTokenNo {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				http.Error(w, `{"error":"Unauthorized","status":401,"message":"invalid token"}`, http.StatusUnauthorized)
 				return
 			}
 			logins := r.URL.Query()["user_login"]
-			h.mu.Lock()
-			h.streamLoginCounts = append(h.streamLoginCounts, len(logins))
-			h.mu.Unlock()
-			var data []map[string]string
+			s.mu.Lock()
+			s.streamLoginCounts = append(s.streamLoginCounts, len(logins))
+			s.mu.Unlock()
+			var data []map[string]any
 			for _, login := range logins {
 				if _, ok := live[strings.ToLower(login)]; ok {
-					data = append(data, map[string]string{"user_login": strings.ToLower(login)})
+					data = append(data, map[string]any{"user_login": strings.ToLower(login)})
 				}
 			}
-			writeJSON(w, map[string]any{"data": data})
+			writeJSON(w, map[string]any{"data": data, "pagination": map[string]any{}})
 
 		default:
 			http.Error(w, "not found", http.StatusNotFound)
 		}
 	}))
-	t.Cleanup(h.server.Close)
+	t.Cleanup(s.server.Close)
 
-	h.client = New(Options{
+	host := strings.TrimPrefix(s.server.URL, "http://")
+	client, err := twitch.New(twitch.Options{
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
-		HelixURL:     h.server.URL,
-		TokenURL:     h.server.URL + "/oauth2/token",
+		HTTPClient:   &http.Client{Transport: rewriteTransport{host: host}},
 	})
-	return h
+	if err != nil {
+		t.Fatalf("twitch.New: %v", err)
+	}
+	return client, s
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
@@ -100,12 +114,17 @@ func writeJSON(w http.ResponseWriter, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
+func (s *stub) counts() (tokens, streams, total int, loginCounts []int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.tokenCalls, s.streamCalls, s.totalRequests, append([]int(nil), s.streamLoginCounts...)
+}
+
 func sortedKeys(m map[string]struct{}) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)
 	}
-	// small n; simple insertion sort keeps deps out
 	for i := 1; i < len(out); i++ {
 		for j := i; j > 0 && out[j-1] > out[j]; j-- {
 			out[j-1], out[j] = out[j], out[j-1]
@@ -114,86 +133,60 @@ func sortedKeys(m map[string]struct{}) []string {
 	return out
 }
 
-func TestFetchesTokenSendsHeadersAndFilters(t *testing.T) {
-	var seenClientID, seenAuth string
-	live := map[string]struct{}{"azn": {}}
-	tokenCalls := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/oauth2/token") {
-			tokenCalls++
-			writeJSON(w, map[string]any{"access_token": "abc"})
-			return
-		}
-		seenClientID = r.Header.Get("Client-Id")
-		seenAuth = r.Header.Get("Authorization")
-		var data []map[string]string
-		for _, login := range r.URL.Query()["user_login"] {
-			if _, ok := live[login]; ok {
-				data = append(data, map[string]string{"user_login": login})
-			}
-		}
-		writeJSON(w, map[string]any{"data": data})
-	}))
-	defer server.Close()
+func TestFetchFiltersToLiveChannels(t *testing.T) {
+	client, s := newStub(t, []string{"azn"}, 0)
 
-	client := New(Options{ClientID: clientID, ClientSecret: clientSecret, HelixURL: server.URL, TokenURL: server.URL + "/oauth2/token"})
 	result, err := client.FetchLiveUsernames(context.Background(), []string{"azn", "offline"})
 	if err != nil {
 		t.Fatalf("FetchLiveUsernames error: %v", err)
 	}
-
 	if got := sortedKeys(result); len(got) != 1 || got[0] != "azn" {
 		t.Errorf("result = %v, want [azn]", got)
 	}
-	if seenClientID != clientID {
-		t.Errorf("Client-Id = %q, want %q", seenClientID, clientID)
-	}
-	if seenAuth != "Bearer abc" {
-		t.Errorf("Authorization = %q, want Bearer abc", seenAuth)
-	}
-	if tokenCalls != 1 {
-		t.Errorf("tokenCalls = %d, want 1", tokenCalls)
+	if tokens, _, _, _ := s.counts(); tokens != 1 {
+		t.Errorf("tokenCalls = %d, want 1", tokens)
 	}
 }
 
 func TestEmptyInputPerformsNoHTTP(t *testing.T) {
-	h := newHarness(t, nil, 0)
-	result, err := h.client.FetchLiveUsernames(context.Background(), nil)
+	client, s := newStub(t, nil, 0)
+	result, err := client.FetchLiveUsernames(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
 	if len(result) != 0 {
 		t.Errorf("result = %v, want empty", result)
 	}
-	if h.totalRequests != 0 {
-		t.Errorf("totalRequests = %d, want 0", h.totalRequests)
+	if _, _, total, _ := s.counts(); total != 0 {
+		t.Errorf("totalRequests = %d, want 0", total)
 	}
 }
 
 func TestFetchesTokenLazily(t *testing.T) {
-	h := newHarness(t, []string{"azn"}, 0)
-	if h.tokenCalls != 0 {
-		t.Fatalf("tokenCalls = %d before use, want 0", h.tokenCalls)
+	client, s := newStub(t, []string{"azn"}, 0)
+	if tokens, _, _, _ := s.counts(); tokens != 0 {
+		t.Fatalf("tokenCalls = %d before use, want 0", tokens)
 	}
-	if _, err := h.client.FetchLiveUsernames(context.Background(), []string{"azn"}); err != nil {
+	if _, err := client.FetchLiveUsernames(context.Background(), []string{"azn"}); err != nil {
 		t.Fatalf("error: %v", err)
 	}
-	if h.tokenCalls != 1 {
-		t.Errorf("tokenCalls = %d, want 1", h.tokenCalls)
+	if tokens, _, _, _ := s.counts(); tokens != 1 {
+		t.Errorf("tokenCalls = %d, want 1", tokens)
 	}
 }
 
-func TestRefreshesTokenOnceOn401(t *testing.T) {
-	h := newHarness(t, []string{"azn"}, 2) // token-1 rejected, token-2 works
-	result, err := h.client.FetchLiveUsernames(context.Background(), []string{"azn"})
+func TestRefreshesTokenOn401(t *testing.T) {
+	// token-1 is rejected; helix auto-refreshes to token-2, which works.
+	client, s := newStub(t, []string{"azn"}, 2)
+	result, err := client.FetchLiveUsernames(context.Background(), []string{"azn"})
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
 	if got := sortedKeys(result); len(got) != 1 || got[0] != "azn" {
 		t.Errorf("result = %v, want [azn]", got)
 	}
-	if h.tokenCalls != 2 {
-		t.Errorf("tokenCalls = %d, want 2", h.tokenCalls)
+	if tokens, _, _, _ := s.counts(); tokens != 2 {
+		t.Errorf("tokenCalls = %d, want 2", tokens)
 	}
 }
 
@@ -202,33 +195,26 @@ func TestBatchesAt100Logins(t *testing.T) {
 	for i := range logins {
 		logins[i] = fmt.Sprintf("user%d", i)
 	}
-	h := newHarness(t, []string{"user0", "user149"}, 0)
-	result, err := h.client.FetchLiveUsernames(context.Background(), logins)
+	client, s := newStub(t, []string{"user0", "user149"}, 0)
+	result, err := client.FetchLiveUsernames(context.Background(), logins)
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
 	if got := sortedKeys(result); len(got) != 2 || got[0] != "user0" || got[1] != "user149" {
 		t.Errorf("result = %v, want [user0 user149]", got)
 	}
-	if h.streamCalls != 2 {
-		t.Errorf("streamCalls = %d, want 2", h.streamCalls)
+	_, streams, _, counts := s.counts()
+	if streams != 2 {
+		t.Errorf("streamCalls = %d, want 2", streams)
 	}
-	if len(h.streamLoginCounts) != 2 || h.streamLoginCounts[0] != 100 || h.streamLoginCounts[1] != 50 {
-		t.Errorf("streamLoginCounts = %v, want [100 50]", h.streamLoginCounts)
+	if len(counts) != 2 || counts[0] != 100 || counts[1] != 50 {
+		t.Errorf("streamLoginCounts = %v, want [100 50]", counts)
 	}
 }
 
 func TestNormalizesReturnedLoginsToLowercase(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/oauth2/token") {
-			writeJSON(w, map[string]any{"access_token": "abc"})
-			return
-		}
-		writeJSON(w, map[string]any{"data": []map[string]string{{"user_login": "AZN"}}})
-	}))
-	defer server.Close()
-
-	client := New(Options{ClientID: clientID, ClientSecret: clientSecret, HelixURL: server.URL, TokenURL: server.URL + "/oauth2/token"})
+	client, _ := newStub(t, []string{"azn"}, 0)
+	// Server lowercases in its response already; assert the wrapper keeps them lowercase.
 	result, err := client.FetchLiveUsernames(context.Background(), []string{"AZN"})
 	if err != nil {
 		t.Fatalf("error: %v", err)

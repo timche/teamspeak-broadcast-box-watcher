@@ -6,7 +6,7 @@ Project-specific rules for `teamspeak-stream-live`. See `README.md` for what the
 
 - Run `gofmt -l .` (fix with `gofmt -w .`), `go vet ./...`, and `go test ./...` before committing.
 - `go build .` compiles the standalone `teamspeak-stream-live` binary.
-- Requires Go 1.24+.
+- Requires Go 1.25+.
 
 ## Code style
 

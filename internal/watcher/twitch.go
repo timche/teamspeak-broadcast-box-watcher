@@ -15,12 +15,12 @@ type LiveUsernameSource interface {
 
 // TwitchTeamSpeak is the subset of the TeamSpeak manager this watcher uses.
 type TwitchTeamSpeak interface {
-	ListTwitchGroups(prefix string) ([]teamspeak.TwitchGroupRef, error)
-	ListGroupMemberDbids(sgid string) (map[string]struct{}, error)
-	ListClients() ([]teamspeak.ClientInfo, error)
-	SendChannelMessage(channelID, text string) error
-	AddClientToGroup(databaseID, sgid string) error
-	RemoveClientFromGroup(databaseID, sgid string) error
+	ListTwitchGroups(ctx context.Context, prefix string) ([]teamspeak.TwitchGroupRef, error)
+	ListGroupMemberDbids(ctx context.Context, sgid string) (map[string]struct{}, error)
+	ListClients(ctx context.Context) ([]teamspeak.ClientInfo, error)
+	SendChannelMessage(ctx context.Context, channelID, text string) error
+	AddClientToGroup(ctx context.Context, databaseID, sgid string) error
+	RemoveClientFromGroup(ctx context.Context, databaseID, sgid string) error
 }
 
 // TwitchOptions configures a TwitchWatcher.
@@ -60,18 +60,18 @@ func (w *TwitchWatcher) streamLink(username string) string {
 
 // Reconcile runs a single reconciliation cycle.
 func (w *TwitchWatcher) Reconcile(ctx context.Context) error {
-	groups, err := w.ts.ListTwitchGroups(w.opts.TwitchGroupPrefix)
+	groups, err := w.ts.ListTwitchGroups(ctx, w.opts.TwitchGroupPrefix)
 	if err != nil {
 		return err
 	}
-	currentMembers, err := w.ts.ListGroupMemberDbids(w.liveGroupSgid)
+	currentMembers, err := w.ts.ListGroupMemberDbids(ctx, w.liveGroupSgid)
 	if err != nil {
 		return err
 	}
 
 	// No twitch.tv/ groups exist: clear the shared group and skip Twitch entirely.
 	if len(groups) == 0 {
-		w.removeMembers(currentMembers)
+		w.removeMembers(ctx, currentMembers)
 		return nil
 	}
 
@@ -83,11 +83,11 @@ func (w *TwitchWatcher) Reconcile(ctx context.Context) error {
 
 	// Nothing is live: clear the shared group and skip the (larger) client list.
 	if len(liveUsernames) == 0 {
-		w.removeMembers(currentMembers)
+		w.removeMembers(ctx, currentMembers)
 		return nil
 	}
 
-	clients, err := w.ts.ListClients()
+	clients, err := w.ts.ListClients(ctx)
 	if err != nil {
 		return err
 	}
@@ -111,38 +111,38 @@ func (w *TwitchWatcher) Reconcile(ctx context.Context) error {
 		}
 	}
 
-	w.reconcileMembership(currentMembers, desired)
+	w.reconcileMembership(ctx, currentMembers, desired)
 	return nil
 }
 
 // Cleanup empties the shared group (best-effort).
-func (w *TwitchWatcher) Cleanup() error {
-	members, err := w.ts.ListGroupMemberDbids(w.liveGroupSgid)
+func (w *TwitchWatcher) Cleanup(ctx context.Context) error {
+	members, err := w.ts.ListGroupMemberDbids(ctx, w.liveGroupSgid)
 	if err != nil {
 		return err
 	}
-	w.removeMembers(members)
+	w.removeMembers(ctx, members)
 	return nil
 }
 
-func (w *TwitchWatcher) reconcileMembership(current map[string]struct{}, desired map[string]liveTwitchUser) {
+func (w *TwitchWatcher) reconcileMembership(ctx context.Context, current map[string]struct{}, desired map[string]liveTwitchUser) {
 	for databaseID, user := range desired {
 		if _, ok := current[databaseID]; ok {
 			continue
 		}
-		if err := w.ts.AddClientToGroup(databaseID, w.liveGroupSgid); err != nil {
+		if err := w.ts.AddClientToGroup(ctx, databaseID, w.liveGroupSgid); err != nil {
 			logger.Log.Error("Twitch failed to add to live group", "dbid", databaseID, "error", err)
 			continue
 		}
 		logger.Log.Info("Twitch added to the live group", "dbid", databaseID)
-		w.announce(user)
+		w.announce(ctx, user)
 	}
 
 	for databaseID := range current {
 		if _, ok := desired[databaseID]; ok {
 			continue
 		}
-		if err := w.ts.RemoveClientFromGroup(databaseID, w.liveGroupSgid); err != nil {
+		if err := w.ts.RemoveClientFromGroup(ctx, databaseID, w.liveGroupSgid); err != nil {
 			logger.Log.Error("Twitch failed to remove from live group", "dbid", databaseID, "error", err)
 			continue
 		}
@@ -150,23 +150,23 @@ func (w *TwitchWatcher) reconcileMembership(current map[string]struct{}, desired
 	}
 }
 
-func (w *TwitchWatcher) announce(user liveTwitchUser) {
+func (w *TwitchWatcher) announce(ctx context.Context, user liveTwitchUser) {
 	if w.opts.LiveMessageTemplate == "" {
 		return
 	}
 	text := strings.ReplaceAll(w.opts.LiveMessageTemplate, "{nickname}", user.client.Nickname)
 	text = strings.ReplaceAll(text, "{link}", w.streamLink(user.username))
 
-	if err := w.ts.SendChannelMessage(user.client.ChannelID, text); err != nil {
+	if err := w.ts.SendChannelMessage(ctx, user.client.ChannelID, text); err != nil {
 		logger.Log.Error("Twitch failed to announce", "nickname", user.client.Nickname, "error", err)
 		return
 	}
 	logger.Log.Info("Twitch announced live", "nickname", user.client.Nickname, "channel", user.client.ChannelID)
 }
 
-func (w *TwitchWatcher) removeMembers(databaseIDs map[string]struct{}) {
+func (w *TwitchWatcher) removeMembers(ctx context.Context, databaseIDs map[string]struct{}) {
 	for databaseID := range databaseIDs {
-		if err := w.ts.RemoveClientFromGroup(databaseID, w.liveGroupSgid); err != nil {
+		if err := w.ts.RemoveClientFromGroup(ctx, databaseID, w.liveGroupSgid); err != nil {
 			logger.Log.Error("Twitch failed to remove from live group", "dbid", databaseID, "error", err)
 		}
 	}

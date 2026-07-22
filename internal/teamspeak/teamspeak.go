@@ -28,8 +28,8 @@ const (
 	emptyResultErrorID = 1281
 	// commandTimeout bounds a single ServerQuery command.
 	commandTimeout = 10 * time.Second
-	// reconnectInterval matches the original library's reconnect(-1, 2000).
-	reconnectInterval = 2 * time.Second
+	// defaultReconnectInterval matches the original library's reconnect(-1, 2000).
+	defaultReconnectInterval = 2 * time.Second
 )
 
 // ClientInfo is a connected regular client.
@@ -62,22 +62,29 @@ type ConnectOptions struct {
 	Username   string
 	Password   string
 	Nickname   string
+	// ReconnectInterval is the backoff between reconnect attempts; defaults to 2s.
+	ReconnectInterval time.Duration
 }
 
-// Manager is a thin, reconnecting wrapper around a go-ts3 client. Its methods
-// are safe for the serial poll loop; a single mutex serialises access and
-// guards the client pointer across reconnects.
+// Manager is a thin, reconnecting wrapper around a go-ts3 client. Its methods are
+// safe for the serial poll loop; a single mutex serialises access and guards the
+// client pointer across reconnects. Context is passed per call (not stored) so a
+// reconnect's backoff is cancellable by the caller.
 type Manager struct {
-	ctx    context.Context
-	opts   ConnectOptions
-	mu     sync.Mutex
-	client *ts3.Client
+	opts              ConnectOptions
+	reconnectInterval time.Duration
+	mu                sync.Mutex
+	client            *ts3.Client
 }
 
 // Connect dials the ServerQuery interface, logs in, selects the virtual server,
 // and sets the nickname.
-func Connect(ctx context.Context, opts ConnectOptions) (*Manager, error) {
-	m := &Manager{ctx: ctx, opts: opts}
+func Connect(opts ConnectOptions) (*Manager, error) {
+	interval := opts.ReconnectInterval
+	if interval <= 0 {
+		interval = defaultReconnectInterval
+	}
+	m := &Manager{opts: opts, reconnectInterval: interval}
 	client, err := m.dial()
 	if err != nil {
 		return nil, err
@@ -110,10 +117,10 @@ func (m *Manager) dial() (*ts3.Client, error) {
 }
 
 // exec runs fn against the live client. A protocol-level error (a *ts3.Error,
-// e.g. a rejected command) is returned as-is. A connection-level failure
-// triggers a reconnect (infinite 2s backoff, cancellable via the context) and
-// one retry — mirroring the original transparent reconnection.
-func (m *Manager) exec(fn func(*ts3.Client) error) error {
+// e.g. a rejected command) is returned as-is. A connection-level failure triggers
+// a reconnect (infinite backoff, cancellable via ctx) and one retry — mirroring
+// the original transparent reconnection.
+func (m *Manager) exec(ctx context.Context, fn func(*ts3.Client) error) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -123,17 +130,17 @@ func (m *Manager) exec(fn func(*ts3.Client) error) error {
 	}
 
 	logger.Log.Warn("TeamSpeak connection error, reconnecting", "error", err)
-	if rerr := m.reconnect(); rerr != nil {
+	if rerr := m.reconnect(ctx); rerr != nil {
 		return rerr
 	}
 	return fn(m.client)
 }
 
-func (m *Manager) reconnect() error {
+func (m *Manager) reconnect(ctx context.Context) error {
 	if m.client != nil {
 		_ = m.client.Close()
 	}
-	bo := backoff.WithContext(backoff.NewConstantBackOff(reconnectInterval), m.ctx)
+	bo := backoff.WithContext(backoff.NewConstantBackOff(m.reconnectInterval), ctx)
 	client, err := backoff.RetryWithData(func() (*ts3.Client, error) {
 		return m.dial()
 	}, bo)
@@ -157,9 +164,9 @@ func isEmptyResult(err error) bool {
 
 // EnsureLiveGroup finds or creates the shared "live" group and makes sure its
 // name is shown before the nickname. Returns its server group id.
-func (m *Manager) EnsureLiveGroup(name string) (string, error) {
+func (m *Manager) EnsureLiveGroup(ctx context.Context, name string) (string, error) {
 	var sgid string
-	err := m.exec(func(c *ts3.Client) error {
+	err := m.exec(ctx, func(c *ts3.Client) error {
 		groups, err := c.Server.GroupList()
 		if err != nil {
 			return err
@@ -185,9 +192,9 @@ func (m *Manager) EnsureLiveGroup(name string) (string, error) {
 }
 
 // ListClients returns the connected regular (non-query) clients.
-func (m *Manager) ListClients() ([]ClientInfo, error) {
+func (m *Manager) ListClients(ctx context.Context) ([]ClientInfo, error) {
 	var result []ClientInfo
-	err := m.exec(func(c *ts3.Client) error {
+	err := m.exec(ctx, func(c *ts3.Client) error {
 		result = nil
 		clients, err := c.Server.ClientList()
 		if err != nil {
@@ -209,9 +216,9 @@ func (m *Manager) ListClients() ([]ClientInfo, error) {
 }
 
 // ListGroupMemberDbids returns the database ids of the clients in a group.
-func (m *Manager) ListGroupMemberDbids(sgid string) (map[string]struct{}, error) {
+func (m *Manager) ListGroupMemberDbids(ctx context.Context, sgid string) (map[string]struct{}, error) {
 	var members map[string]struct{}
-	err := m.exec(func(c *ts3.Client) error {
+	err := m.exec(ctx, func(c *ts3.Client) error {
 		got, err := groupMemberDbids(c, sgid)
 		if err != nil {
 			return err
@@ -224,9 +231,9 @@ func (m *Manager) ListGroupMemberDbids(sgid string) (map[string]struct{}, error)
 
 // ListGroupsByPrefix returns server groups whose name starts with prefix,
 // excluding excludeSgid.
-func (m *Manager) ListGroupsByPrefix(prefix, excludeSgid string) ([]ServerGroupRef, error) {
+func (m *Manager) ListGroupsByPrefix(ctx context.Context, prefix, excludeSgid string) ([]ServerGroupRef, error) {
 	var result []ServerGroupRef
-	err := m.exec(func(c *ts3.Client) error {
+	err := m.exec(ctx, func(c *ts3.Client) error {
 		result = nil
 		groups, err := c.Server.GroupList()
 		if err != nil {
@@ -249,9 +256,9 @@ func (m *Manager) ListGroupsByPrefix(prefix, excludeSgid string) ([]ServerGroupR
 // ListTwitchGroups returns the pre-assigned `twitch.tv/<username>` groups, each
 // resolved to its (lowercased) username and current member database ids. Groups
 // with an empty username (a bare prefix) are skipped.
-func (m *Manager) ListTwitchGroups(prefix string) ([]TwitchGroupRef, error) {
+func (m *Manager) ListTwitchGroups(ctx context.Context, prefix string) ([]TwitchGroupRef, error) {
 	var result []TwitchGroupRef
-	err := m.exec(func(c *ts3.Client) error {
+	err := m.exec(ctx, func(c *ts3.Client) error {
 		result = nil
 		groups, err := c.Server.GroupList()
 		if err != nil {
@@ -283,15 +290,15 @@ func (m *Manager) ListTwitchGroups(prefix string) ([]TwitchGroupRef, error) {
 }
 
 // AddClientToGroup assigns a client (by database id) to a server group.
-func (m *Manager) AddClientToGroup(databaseID, sgid string) error {
-	return m.exec(func(c *ts3.Client) error {
+func (m *Manager) AddClientToGroup(ctx context.Context, databaseID, sgid string) error {
+	return m.exec(ctx, func(c *ts3.Client) error {
 		return addClient(c, databaseID, sgid)
 	})
 }
 
 // RemoveClientFromGroup removes a client (by database id) from a server group.
-func (m *Manager) RemoveClientFromGroup(databaseID, sgid string) error {
-	return m.exec(func(c *ts3.Client) error {
+func (m *Manager) RemoveClientFromGroup(ctx context.Context, databaseID, sgid string) error {
+	return m.exec(ctx, func(c *ts3.Client) error {
 		_, err := c.ExecCmd(ts3.NewCmd("servergroupdelclient").WithArgs(
 			ts3.NewArg("sgid", sgid),
 			ts3.NewArg("cldbid", databaseID),
@@ -301,9 +308,9 @@ func (m *Manager) RemoveClientFromGroup(databaseID, sgid string) error {
 }
 
 // CreateGroupAndAssign creates a regular server group and assigns the client.
-func (m *Manager) CreateGroupAndAssign(name, databaseID string) (string, error) {
+func (m *Manager) CreateGroupAndAssign(ctx context.Context, name, databaseID string) (string, error) {
 	var sgid string
-	err := m.exec(func(c *ts3.Client) error {
+	err := m.exec(ctx, func(c *ts3.Client) error {
 		created, err := createServerGroup(c, name)
 		if err != nil {
 			return err
@@ -319,8 +326,8 @@ func (m *Manager) CreateGroupAndAssign(name, databaseID string) (string, error) 
 }
 
 // DeleteGroup deletes a server group, force-removing any members.
-func (m *Manager) DeleteGroup(group ServerGroupRef) error {
-	return m.exec(func(c *ts3.Client) error {
+func (m *Manager) DeleteGroup(ctx context.Context, group ServerGroupRef) error {
+	return m.exec(ctx, func(c *ts3.Client) error {
 		if _, err := c.ExecCmd(ts3.NewCmd("servergroupdel").WithArgs(
 			ts3.NewArg("sgid", group.SGID),
 			ts3.NewArg("force", 1),
@@ -334,8 +341,8 @@ func (m *Manager) DeleteGroup(group ServerGroupRef) error {
 
 // SendChannelMessage sends a text message to a channel. Channel messages always
 // go to the query client's current channel, so it is moved first if needed.
-func (m *Manager) SendChannelMessage(channelID, text string) error {
-	return m.exec(func(c *ts3.Client) error {
+func (m *Manager) SendChannelMessage(ctx context.Context, channelID, text string) error {
+	return m.exec(ctx, func(c *ts3.Client) error {
 		info, err := c.Whoami()
 		if err != nil {
 			return err

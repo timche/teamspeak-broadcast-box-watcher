@@ -21,7 +21,7 @@ import (
 type namedWatcher interface {
 	Name() string
 	Reconcile(ctx context.Context) error
-	Cleanup() error
+	Cleanup(ctx context.Context) error
 }
 
 func main() {
@@ -46,7 +46,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	ts, err := teamspeak.Connect(ctx, teamspeak.ConnectOptions{
+	ts, err := teamspeak.Connect(teamspeak.ConnectOptions{
 		Host:       cfg.TeamSpeak.Host,
 		QueryPort:  cfg.TeamSpeak.QueryPort,
 		ServerPort: cfg.TeamSpeak.ServerPort,
@@ -58,16 +58,19 @@ func run() error {
 		return err
 	}
 
-	watchers, err := buildWatchers(cfg, ts)
+	watchers, err := buildWatchers(ctx, cfg, ts)
 	if err != nil {
 		return err
 	}
 
 	pollLoop(ctx, cfg.PollInterval, watchers)
 
-	// Best-effort cleanup: clear the live groups and delete per-user stream groups.
+	// Best-effort cleanup under a fresh timeout, since the main context is already
+	// cancelled by the time we shut down.
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	for _, w := range watchers {
-		if err := w.Cleanup(); err != nil {
+		if err := w.Cleanup(cleanupCtx); err != nil {
 			logger.Log.Error("cleanup during shutdown failed", "watcher", w.Name(), "error", err)
 		}
 	}
@@ -78,11 +81,11 @@ func run() error {
 	return nil
 }
 
-func buildWatchers(cfg config.Config, ts *teamspeak.Manager) ([]namedWatcher, error) {
+func buildWatchers(ctx context.Context, cfg config.Config, ts *teamspeak.Manager) ([]namedWatcher, error) {
 	var watchers []namedWatcher
 
 	if cfg.BroadcastBox != nil {
-		liveGroupSgid, err := ts.EnsureLiveGroup(cfg.BroadcastBox.LiveGroupName)
+		liveGroupSgid, err := ts.EnsureLiveGroup(ctx, cfg.BroadcastBox.LiveGroupName)
 		if err != nil {
 			return nil, err
 		}
@@ -98,14 +101,17 @@ func buildWatchers(cfg config.Config, ts *teamspeak.Manager) ([]namedWatcher, er
 	}
 
 	if cfg.Twitch != nil {
-		liveGroupSgid, err := ts.EnsureLiveGroup(cfg.Twitch.LiveGroupName)
+		liveGroupSgid, err := ts.EnsureLiveGroup(ctx, cfg.Twitch.LiveGroupName)
 		if err != nil {
 			return nil, err
 		}
-		client := twitch.New(twitch.Options{
+		client, err := twitch.New(twitch.Options{
 			ClientID:     cfg.Twitch.ClientID,
 			ClientSecret: cfg.Twitch.ClientSecret,
 		})
+		if err != nil {
+			return nil, err
+		}
 		watchers = append(watchers, watcher.NewTwitchWatcher(client, ts, liveGroupSgid, watcher.TwitchOptions{
 			TwitchGroupPrefix:   cfg.Twitch.TwitchGroupPrefix,
 			PublicTwitchHost:    cfg.Twitch.PublicTwitchHost,
