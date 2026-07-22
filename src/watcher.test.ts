@@ -60,7 +60,7 @@ function run(
   broadcastBox: { fetchLiveStreamKeys: () => Promise<Set<string>> },
   ts: unknown,
 ): Promise<void> {
-  return new Watcher(config, broadcastBox as never, ts as never, LIVE_SGID).reconcile();
+  return new Watcher(broadcastBox as never, ts as never, LIVE_SGID).reconcile();
 }
 
 test("config exposes decoupled group names and a normalized public host", () => {

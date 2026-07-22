@@ -1,5 +1,5 @@
 import { QueryProtocol, TeamSpeak } from "ts3-nodejs-library";
-import type { Config } from "./config.ts";
+import { config } from "./config.ts";
 import { logger } from "./logger.ts";
 
 /** A regular (non-template) server group. */
@@ -41,7 +41,7 @@ export class TeamSpeakManager {
     this.#query = query;
   }
 
-  static async connect(config: Config): Promise<TeamSpeakManager> {
+  static async connect(): Promise<TeamSpeakManager> {
     const query = await TeamSpeak.connect({
       host: config.teamspeak.host,
       protocol: QueryProtocol.RAW,
@@ -80,7 +80,8 @@ export class TeamSpeakManager {
    * Finds or creates the shared "live" group and makes sure its name is shown
    * before the nickname in the client tree. Returns its server group id.
    */
-  async ensureLiveGroup(name: string): Promise<string> {
+  async ensureLiveGroup(): Promise<string> {
+    const name = config.liveGroupName;
     const groups = await this.#query.serverGroupList();
     let group = groups.find((candidate) => candidate.name === name);
 

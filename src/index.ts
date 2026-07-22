@@ -26,10 +26,10 @@ async function main(): Promise<void> {
       `stream prefix: "${config.streamGroupPrefix}"`,
   );
 
-  const broadcastBox = new BroadcastBoxClient(config);
-  const teamspeak = await TeamSpeakManager.connect(config);
-  const liveGroupSgid = await teamspeak.ensureLiveGroup(config.liveGroupName);
-  const watcher = new Watcher(config, broadcastBox, teamspeak, liveGroupSgid);
+  const broadcastBox = new BroadcastBoxClient();
+  const teamspeak = await TeamSpeakManager.connect();
+  const liveGroupSgid = await teamspeak.ensureLiveGroup();
+  const watcher = new Watcher(broadcastBox, teamspeak, liveGroupSgid);
 
   const abort = new AbortController();
   let shuttingDown = false;
