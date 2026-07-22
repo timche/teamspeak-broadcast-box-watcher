@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Compiled binary + build artifacts
+/watcher
+*.map
+
+# Environment
+.env
+.env.local
+
+# Logs
+*.log
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/

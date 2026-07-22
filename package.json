@@ -1,0 +1,29 @@
+{
+  "name": "teamspeak-broadcast-box-watcher",
+  "version": "0.1.0",
+  "description": "Assigns a temporary TeamSpeak server group to users who are live on Broadcast Box",
+  "license": "MIT",
+  "author": "Tim Cheung <tim@cheung.io>",
+  "type": "module",
+  "module": "src/index.ts",
+  "scripts": {
+    "build": "bun build --compile --minify --sourcemap src/index.ts --outfile watcher",
+    "dev": "bun --watch src/index.ts",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check .",
+    "lint": "oxlint",
+    "start": "bun run src/index.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "ts3-nodejs-library": "^3.5.3"
+  },
+  "devDependencies": {
+    "@timche/oxc-configs": "^1.0.6",
+    "@types/bun": "^1.3.14",
+    "oxfmt": "^0.60.0",
+    "oxlint": "^1.75.0",
+    "typescript": "^7.0.2"
+  }
+}

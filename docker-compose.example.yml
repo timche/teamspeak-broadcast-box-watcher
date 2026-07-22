@@ -1,0 +1,65 @@
+# Example wiring of the watcher together with Broadcast Box and TeamSpeak on a
+# single private network. Copy to docker-compose.yml, fill in the secrets, and
+# adjust image tags/ports to taste.
+
+services:
+  teamspeak:
+    image: teamspeak:latest
+    restart: unless-stopped
+    environment:
+      TS3SERVER_LICENSE: accept
+    ports:
+      # Voice + query exposed to the host only if you need external access.
+      - "9987:9987/udp"
+      - "10011:10011"
+      - "30033:30033"
+    networks:
+      - broadcast
+    volumes:
+      - teamspeak-data:/var/ts3server
+
+  broadcast-box:
+    image: seaduboi/broadcast-box:latest
+    restart: unless-stopped
+    environment:
+      # Turn off the public status endpoint; the watcher uses /api/admin/status.
+      DISABLE_STATUS: "true"
+      # Must match BROADCAST_BOX_ADMIN_TOKEN below (cleartext).
+      FRONTEND_ADMIN_TOKEN: "${BROADCAST_BOX_ADMIN_TOKEN}"
+    ports:
+      - "8080:8080"
+      - "3000:3000"
+    networks:
+      - broadcast
+
+  watcher:
+    # Replace with your Docker Hub image, e.g. timche/teamspeak-broadcast-box-watcher:latest
+    image: timche/teamspeak-broadcast-box-watcher:latest
+    # Or build locally:
+    # build: .
+    restart: unless-stopped
+    depends_on:
+      - teamspeak
+      - broadcast-box
+    environment:
+      BROADCAST_BOX_API_URL: http://broadcast-box:8080
+      BROADCAST_BOX_ADMIN_TOKEN: "${BROADCAST_BOX_ADMIN_TOKEN}"
+      PUBLIC_STREAM_HOST: "${PUBLIC_STREAM_HOST}"
+      TEAMSPEAK_HOST: teamspeak
+      TEAMSPEAK_QUERY_PORT: "10011"
+      TEAMSPEAK_SERVER_PORT: "9987"
+      TEAMSPEAK_QUERY_USERNAME: serveradmin
+      TEAMSPEAK_QUERY_PASSWORD: "${TEAMSPEAK_QUERY_PASSWORD}"
+      TEAMSPEAK_QUERY_NICKNAME: broadcast-watcher
+      POLL_INTERVAL_MS: "10000"
+      GROUP_PREFIX: "🔴"
+      LOG_LEVEL: info
+    networks:
+      - broadcast
+
+networks:
+  broadcast:
+    driver: bridge
+
+volumes:
+  teamspeak-data:
