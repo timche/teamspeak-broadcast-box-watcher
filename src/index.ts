@@ -26,7 +26,7 @@ async function main(): Promise<void> {
       `stream prefix: "${config.streamGroupPrefix}"`,
   );
 
-  const broadcastBox = new BroadcastBoxClient();
+  const broadcastBox = new BroadcastBoxClient(config.broadcastBox);
   const teamspeak = await TeamSpeakManager.connect();
   const liveGroupSgid = await teamspeak.ensureLiveGroup();
   const watcher = new Watcher(broadcastBox, teamspeak, liveGroupSgid);

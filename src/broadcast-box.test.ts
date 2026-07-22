@@ -1,54 +1,39 @@
-import { afterEach, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { BroadcastBoxClient } from "./broadcast-box.ts";
 import { logger } from "./logger.ts";
 
 logger.level = 0; // keep test output quiet
 
-const realFetch = globalThis.fetch;
-
-afterEach(() => {
-  globalThis.fetch = realFetch;
-});
-
-/** Replaces `fetch` with a stub, capturing the request and returning `responder()`. */
-function stubFetch(responder: () => Response): { request: () => Request } {
-  let captured: Request | undefined;
-
-  globalThis.fetch = ((...[input, init]: Parameters<typeof fetch>) => {
-    captured = input instanceof Request ? input : new Request(String(input), init);
-
-    return Promise.resolve(responder());
-  }) as typeof fetch;
-
-  return {
-    request: () => {
-      if (captured === undefined) {
-        throw new Error("fetch was not called");
-      }
-
-      return captured;
-    },
-  };
+function clientForUrl(apiUrl: string) {
+  return new BroadcastBoxClient({ apiUrl, authorization: `Bearer ${btoa("s3cr3t")}` });
 }
 
-test("fetchLiveStreamKeys sends a base64 bearer and filters to live publishers", async () => {
-  const stub = stubFetch(() =>
-    Response.json([
-      { streamKey: "azn", streamStart: 1_720_000_000, videoTracks: [{ rid: "h" }] },
-      { streamKey: "vieweronly", streamStart: 0, videoTracks: [], audioTracks: [] },
-      { streamKey: "audioonly", audioTracks: [{ rid: "a" }] },
-      { streamKey: "", streamStart: 123 },
-    ]),
-  );
+test("fetchLiveStreamKeys sends the bearer and filters to live publishers", async () => {
+  let seenAuth = "";
+  const server = Bun.serve({
+    port: 0,
+    fetch(request) {
+      seenAuth = request.headers.get("authorization") ?? "";
+      return Response.json([
+        { streamKey: "azn", streamStart: 1_720_000_000, videoTracks: [{ rid: "h" }] },
+        { streamKey: "vieweronly", streamStart: 0, videoTracks: [], audioTracks: [] },
+        { streamKey: "audioonly", audioTracks: [{ rid: "a" }] },
+        { streamKey: "", streamStart: 123 },
+      ]);
+    },
+  });
 
-  const live = await new BroadcastBoxClient().fetchLiveStreamKeys();
+  const live = await clientForUrl(server.url.origin).fetchLiveStreamKeys();
+  server.stop(true);
 
-  expect(stub.request().headers.get("authorization")).toBe(`Bearer ${btoa("secret")}`);
+  expect(seenAuth).toBe(`Bearer ${btoa("s3cr3t")}`);
   expect([...live].sort()).toEqual(["audioonly", "azn"]);
 });
 
 test("throws on a non-2xx response", async () => {
-  stubFetch(() => new Response("nope", { status: 401 }));
+  const server = Bun.serve({ port: 0, fetch: () => new Response("nope", { status: 401 }) });
+  const client = clientForUrl(server.url.origin);
 
-  await expect(new BroadcastBoxClient().fetchLiveStreamKeys()).rejects.toThrow("401");
+  await expect(client.fetchLiveStreamKeys()).rejects.toThrow("401");
+  server.stop(true);
 });
