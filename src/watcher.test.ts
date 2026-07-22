@@ -53,7 +53,7 @@ function makeTeamspeak(
 }
 
 function streamGroup(streamKey: string): string {
-  return `🔴 stream.example.com/${streamKey}`;
+  return `▶️ stream.example.com/${streamKey}`;
 }
 
 function run(
@@ -64,8 +64,8 @@ function run(
 }
 
 test("config exposes decoupled group names and a normalized public host", () => {
-  expect(config.liveGroupName).toBe("🔴");
-  expect(config.streamGroupPrefix).toBe("🔴");
+  expect(config.liveGroupName).toBe("▶️");
+  expect(config.streamGroupPrefix).toBe("▶️");
   expect(config.publicStreamHost).toBe("stream.example.com");
   expect(config.broadcastBox.authorization).toBe(`Bearer ${btoa("secret")}`);
 });

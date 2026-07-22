@@ -33,7 +33,7 @@ export class Watcher {
     this.#publicStreamHost = options.publicStreamHost;
   }
 
-  /** Per-user stream-link group name, e.g. `🔴 stream.example.com/alice`. */
+  /** Per-user stream-link group name, e.g. `▶️ stream.example.com/alice`. */
   #streamGroupName(streamKey: string): string {
     return `${this.#streamGroupPrefix} ${this.#publicStreamHost}/${streamKey}`;
   }
