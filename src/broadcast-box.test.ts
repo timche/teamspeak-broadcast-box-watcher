@@ -1,19 +1,14 @@
 import { expect, test } from "bun:test";
 import { BroadcastBoxClient } from "./broadcast-box.ts";
-import { configSchema } from "./config.ts";
+import { config } from "./config.ts";
 import { logger } from "./logger.ts";
 
 logger.level = 0; // keep test output quiet
 
+// Only the API URL is dynamic per test (a fresh loopback server); everything
+// else comes from the shared `config`.
 function configForUrl(apiUrl: string) {
-  return configSchema.parse({
-    BROADCAST_BOX_API_URL: apiUrl,
-    BROADCAST_BOX_ADMIN_TOKEN: "s3cr3t",
-    PUBLIC_STREAM_HOST: "stream.example.com",
-    TEAMSPEAK_HOST: "ts",
-    TEAMSPEAK_QUERY_PASSWORD: "pw",
-    LOG_LEVEL: "error",
-  });
+  return { ...config, broadcastBox: { ...config.broadcastBox, apiUrl } };
 }
 
 test("fetchLiveStreamKeys sends a base64 bearer and filters to live publishers", async () => {
@@ -35,7 +30,7 @@ test("fetchLiveStreamKeys sends a base64 bearer and filters to live publishers",
   const live = await client.fetchLiveStreamKeys();
   server.stop(true);
 
-  expect(seenAuth).toBe(`Bearer ${btoa("s3cr3t")}`);
+  expect(seenAuth).toBe(`Bearer ${btoa("secret")}`);
   expect([...live].sort()).toEqual(["audioonly", "azn"]);
 });
 
