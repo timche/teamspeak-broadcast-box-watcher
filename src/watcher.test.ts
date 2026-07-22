@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { loadConfig } from "./config.ts";
+import { config } from "./config.ts";
 import { logger } from "./logger.ts";
 import type { ServerGroupRef } from "./teamspeak.ts";
 import { Watcher } from "./watcher.ts";
@@ -7,14 +7,6 @@ import { Watcher } from "./watcher.ts";
 logger.level = 0; // keep test output quiet
 
 const LIVE_SGID = "100";
-
-const config = loadConfig({
-  BROADCAST_BOX_API_URL: "http://broadcast-box:8080",
-  BROADCAST_BOX_ADMIN_TOKEN: "secret",
-  PUBLIC_STREAM_HOST: "https://stream.example.com/",
-  TEAMSPEAK_HOST: "teamspeak",
-  TEAMSPEAK_QUERY_PASSWORD: "pw",
-});
 
 function makeTeamspeak(
   members: string[],
@@ -68,7 +60,7 @@ function run(
   broadcastBox: { fetchLiveStreamKeys: () => Promise<Set<string>> },
   ts: unknown,
 ): Promise<void> {
-  return new Watcher(config, broadcastBox as never, ts as never, LIVE_SGID).reconcile();
+  return new Watcher(broadcastBox as never, ts as never, LIVE_SGID, config).reconcile();
 }
 
 test("config exposes decoupled group names and a normalized public host", () => {

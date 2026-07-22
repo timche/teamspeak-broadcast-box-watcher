@@ -1,5 +1,4 @@
 import type { BroadcastBoxClient } from "./broadcast-box.ts";
-import type { Config } from "./config.ts";
 import { logger } from "./logger.ts";
 import type { ServerGroupRef, TeamSpeakManager } from "./teamspeak.ts";
 
@@ -15,31 +14,33 @@ import type { ServerGroupRef, TeamSpeakManager } from "./teamspeak.ts";
  * against what actually exists on the server, so it self-heals across restarts.
  */
 export class Watcher {
-  readonly #config: Config;
   readonly #broadcastBox: BroadcastBoxClient;
   readonly #teamspeak: TeamSpeakManager;
   readonly #liveGroupSgid: string;
+  readonly #streamGroupPrefix: string;
+  readonly #publicStreamHost: string;
 
   constructor(
-    config: Config,
     broadcastBox: BroadcastBoxClient,
     teamspeak: TeamSpeakManager,
     liveGroupSgid: string,
+    options: { streamGroupPrefix: string; publicStreamHost: string },
   ) {
-    this.#config = config;
     this.#broadcastBox = broadcastBox;
     this.#teamspeak = teamspeak;
     this.#liveGroupSgid = liveGroupSgid;
+    this.#streamGroupPrefix = options.streamGroupPrefix;
+    this.#publicStreamHost = options.publicStreamHost;
   }
 
   /** Per-user stream-link group name, e.g. `🔴 stream.example.com/alice`. */
   #streamGroupName(streamKey: string): string {
-    return `${this.#config.streamGroupPrefix} ${this.#config.publicStreamHost}/${streamKey}`;
+    return `${this.#streamGroupPrefix} ${this.#publicStreamHost}/${streamKey}`;
   }
 
   /** Name prefix used to find the per-user stream-link groups. */
   #streamGroupNamePrefix(): string {
-    return `${this.#config.streamGroupPrefix} `;
+    return `${this.#streamGroupPrefix} `;
   }
 
   /** Runs a single reconciliation cycle. */

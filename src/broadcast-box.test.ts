@@ -1,22 +1,14 @@
 import { expect, test } from "bun:test";
 import { BroadcastBoxClient } from "./broadcast-box.ts";
-import { loadConfig } from "./config.ts";
 import { logger } from "./logger.ts";
 
 logger.level = 0; // keep test output quiet
 
-function configForUrl(apiUrl: string) {
-  return loadConfig({
-    BROADCAST_BOX_API_URL: apiUrl,
-    BROADCAST_BOX_ADMIN_TOKEN: "s3cr3t",
-    PUBLIC_STREAM_HOST: "stream.example.com",
-    TEAMSPEAK_HOST: "ts",
-    TEAMSPEAK_QUERY_PASSWORD: "pw",
-    LOG_LEVEL: "error",
-  });
+function clientForUrl(apiUrl: string) {
+  return new BroadcastBoxClient({ apiUrl, authorization: `Bearer ${btoa("s3cr3t")}` });
 }
 
-test("fetchLiveStreamKeys sends a base64 bearer and filters to live publishers", async () => {
+test("fetchLiveStreamKeys sends the bearer and filters to live publishers", async () => {
   let seenAuth = "";
   const server = Bun.serve({
     port: 0,
@@ -31,8 +23,7 @@ test("fetchLiveStreamKeys sends a base64 bearer and filters to live publishers",
     },
   });
 
-  const client = new BroadcastBoxClient(configForUrl(server.url.origin));
-  const live = await client.fetchLiveStreamKeys();
+  const live = await clientForUrl(server.url.origin).fetchLiveStreamKeys();
   server.stop(true);
 
   expect(seenAuth).toBe(`Bearer ${btoa("s3cr3t")}`);
@@ -41,7 +32,7 @@ test("fetchLiveStreamKeys sends a base64 bearer and filters to live publishers",
 
 test("throws on a non-2xx response", async () => {
   const server = Bun.serve({ port: 0, fetch: () => new Response("nope", { status: 401 }) });
-  const client = new BroadcastBoxClient(configForUrl(server.url.origin));
+  const client = clientForUrl(server.url.origin);
 
   await expect(client.fetchLiveStreamKeys()).rejects.toThrow("401");
   server.stop(true);

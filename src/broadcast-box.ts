@@ -1,6 +1,5 @@
 import ky, { type KyInstance } from "ky";
 import { z } from "zod";
-import type { Config } from "./config.ts";
 import { logger } from "./logger.ts";
 
 /**
@@ -54,11 +53,11 @@ function isLive(state: StreamSession): state is StreamSession & { streamKey: str
 export class BroadcastBoxClient {
   readonly #api: KyInstance;
 
-  constructor(config: Config) {
+  constructor(options: { apiUrl: string; authorization: string }) {
     this.#api = ky.create({
-      prefix: config.broadcastBox.apiUrl,
+      prefix: options.apiUrl,
       headers: {
-        Authorization: config.broadcastBox.authorization,
+        Authorization: options.authorization,
         Accept: "application/json",
       },
       retry: { limit: 2 },
