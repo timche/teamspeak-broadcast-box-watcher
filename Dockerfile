@@ -22,12 +22,10 @@ RUN bun run build
 FROM debian:bookworm-slim AS runtime
 WORKDIR /app
 
-# Bun's compiled binary links against glibc; ca-certificates is needed for
-# outbound HTTPS to Broadcast Box when it is served over TLS.
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
-
+# No ca-certificates needed: the watcher reaches Broadcast Box over the private
+# network via plain HTTP (TLS is terminated at the reverse proxy for public
+# traffic), and Bun's compiled binary bundles its own root store for the rare
+# case that BROADCAST_BOX_API_URL points at a public-CA HTTPS endpoint.
 COPY --from=build /app/bbox-ts-live /usr/local/bin/bbox-ts-live
 
 # Run as the non-root user provided by the base image.
