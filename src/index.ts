@@ -1,5 +1,5 @@
 import { BroadcastBoxClient } from "./broadcast-box.ts";
-import { loadConfig } from "./config.ts";
+import { config } from "./config.ts";
 import { logger } from "./logger.ts";
 import { TeamSpeakManager } from "./teamspeak.ts";
 import { Watcher } from "./watcher.ts";
@@ -19,8 +19,6 @@ function delay(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const config = loadConfig();
-
   logger.info("Starting bbox-ts-live");
   logger.debug(
     `Broadcast Box: ${config.broadcastBox.apiUrl} · public host: ${config.publicStreamHost} · ` +

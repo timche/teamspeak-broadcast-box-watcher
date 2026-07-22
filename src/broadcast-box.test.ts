@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test";
 import { BroadcastBoxClient } from "./broadcast-box.ts";
-import { loadConfig } from "./config.ts";
+import { configSchema } from "./config.ts";
 import { logger } from "./logger.ts";
 
 logger.level = 0; // keep test output quiet
 
 function configForUrl(apiUrl: string) {
-  return loadConfig({
+  return configSchema.parse({
     BROADCAST_BOX_API_URL: apiUrl,
     BROADCAST_BOX_ADMIN_TOKEN: "s3cr3t",
     PUBLIC_STREAM_HOST: "stream.example.com",

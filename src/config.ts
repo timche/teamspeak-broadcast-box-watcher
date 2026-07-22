@@ -1,89 +1,87 @@
-export interface Config {
-  broadcastBox: {
-    apiUrl: string;
-    /** Base64-encoded bearer token derived from the cleartext env value. */
-    authorization: string;
-  };
-  /** Public host used in the per-user stream-link group name, e.g. `stream.example.com`. */
-  publicStreamHost: string;
-  teamspeak: {
-    host: string;
-    queryPort: number;
-    serverPort: number;
-    username: string;
-    password: string;
-    nickname: string;
-  };
-  pollIntervalMs: number;
-  /** Name of the shared "live" group (shown before the nickname in the tree). */
-  liveGroupName: string;
-  /** Prefix for the per-user stream-link groups, e.g. `🔴 stream.example.com/alice`. */
-  streamGroupPrefix: string;
+import { z } from "zod";
+
+/**
+ * Coerces empty/whitespace-only env values to `undefined` so that
+ * {@link optionalEnv}/{@link integerEnv} fall back and {@link requiredEnv}
+ * reports a missing variable rather than accepting a blank string.
+ */
+function blankToUndefined(value: unknown): unknown {
+  return typeof value === "string" && value.trim() === "" ? undefined : value;
 }
 
-class ConfigError extends Error {}
-
-function required(env: Record<string, string | undefined>, key: string): string {
-  const value = env[key];
-
-  if (value === undefined || value.trim() === "") {
-    throw new ConfigError(`Missing required environment variable: ${key}`);
-  }
-
-  return value;
+/** A required, non-blank environment variable. */
+function requiredEnv(key: string) {
+  return z.preprocess(
+    blankToUndefined,
+    z.string({ error: `Missing required environment variable: ${key}` }),
+  );
 }
 
-function optional(env: Record<string, string | undefined>, key: string, fallback: string): string {
-  const value = env[key];
-
-  return value === undefined || value.trim() === "" ? fallback : value;
+/** An optional environment variable that falls back to `fallback` when unset. */
+function optionalEnv(fallback: string) {
+  return z.preprocess(blankToUndefined, z.string().default(fallback));
 }
 
-function integer(env: Record<string, string | undefined>, key: string, fallback: number): number {
-  const value = env[key];
-
-  if (value === undefined || value.trim() === "") {
-    return fallback;
-  }
-
-  const parsed = Number(value);
-
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new ConfigError(`Environment variable ${key} must be a positive integer, got: ${value}`);
-  }
-
-  return parsed;
+/** An environment variable parsed as a positive integer, defaulting to `fallback`. */
+function integerEnv(key: string, fallback: number) {
+  return z.preprocess(
+    blankToUndefined,
+    z
+      .string()
+      .refine((value) => Number.isInteger(Number(value)) && Number(value) > 0, {
+        error: `Environment variable ${key} must be a positive integer`,
+      })
+      .transform((value) => Number(value))
+      .default(fallback),
+  );
 }
 
 /**
- * Parses and validates the process environment into a {@link Config}.
+ * Validates the raw process environment and maps it into the runtime config.
  *
- * Throws a descriptive error (never leaking secret values) when a required
- * variable is missing or malformed.
+ * Every setting is env-configurable; secret values are never echoed back in
+ * validation errors.
  */
-export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
-  const token = required(env, "BROADCAST_BOX_ADMIN_TOKEN");
-
-  return {
+export const configSchema = z
+  .object({
+    BROADCAST_BOX_API_URL: requiredEnv("BROADCAST_BOX_API_URL"),
+    BROADCAST_BOX_ADMIN_TOKEN: requiredEnv("BROADCAST_BOX_ADMIN_TOKEN"),
+    PUBLIC_STREAM_HOST: requiredEnv("PUBLIC_STREAM_HOST"),
+    TEAMSPEAK_HOST: requiredEnv("TEAMSPEAK_HOST"),
+    TEAMSPEAK_QUERY_PORT: integerEnv("TEAMSPEAK_QUERY_PORT", 10_011),
+    TEAMSPEAK_SERVER_PORT: integerEnv("TEAMSPEAK_SERVER_PORT", 9987),
+    TEAMSPEAK_QUERY_USERNAME: optionalEnv("serveradmin"),
+    TEAMSPEAK_QUERY_PASSWORD: requiredEnv("TEAMSPEAK_QUERY_PASSWORD"),
+    TEAMSPEAK_QUERY_NICKNAME: optionalEnv("bbox-ts-live"),
+    POLL_INTERVAL_MS: integerEnv("POLL_INTERVAL_MS", 10_000),
+    LIVE_GROUP_NAME: optionalEnv("🔴"),
+    STREAM_GROUP_PREFIX: optionalEnv("🔴"),
+  })
+  .transform((env) => ({
     broadcastBox: {
-      apiUrl: required(env, "BROADCAST_BOX_API_URL").replace(/\/+$/, ""),
+      apiUrl: env.BROADCAST_BOX_API_URL.replace(/\/+$/, ""),
       // The env var holds the token in cleartext; Broadcast Box expects it
       // base64-encoded in the Authorization header.
-      authorization: `Bearer ${Buffer.from(token, "utf8").toString("base64")}`,
+      authorization: `Bearer ${Buffer.from(env.BROADCAST_BOX_ADMIN_TOKEN, "utf8").toString("base64")}`,
     },
-    publicStreamHost: required(env, "PUBLIC_STREAM_HOST")
-      .replace(/^https?:\/\//, "")
-      .replace(/\/+$/, ""),
+    /** Public host used in the per-user stream-link group name, e.g. `stream.example.com`. */
+    publicStreamHost: env.PUBLIC_STREAM_HOST.replace(/^https?:\/\//, "").replace(/\/+$/, ""),
     teamspeak: {
-      host: required(env, "TEAMSPEAK_HOST"),
-      queryPort: integer(env, "TEAMSPEAK_QUERY_PORT", 10011),
-      serverPort: integer(env, "TEAMSPEAK_SERVER_PORT", 9987),
-      username: optional(env, "TEAMSPEAK_QUERY_USERNAME", "serveradmin"),
-      password: required(env, "TEAMSPEAK_QUERY_PASSWORD"),
-      nickname: optional(env, "TEAMSPEAK_QUERY_NICKNAME", "bbox-ts-live"),
+      host: env.TEAMSPEAK_HOST,
+      queryPort: env.TEAMSPEAK_QUERY_PORT,
+      serverPort: env.TEAMSPEAK_SERVER_PORT,
+      username: env.TEAMSPEAK_QUERY_USERNAME,
+      password: env.TEAMSPEAK_QUERY_PASSWORD,
+      nickname: env.TEAMSPEAK_QUERY_NICKNAME,
     },
-    pollIntervalMs: integer(env, "POLL_INTERVAL_MS", 10_000),
-    liveGroupName: optional(env, "LIVE_GROUP_NAME", "🔴"),
-    streamGroupPrefix: optional(env, "STREAM_GROUP_PREFIX", "🔴"),
-  };
-}
+    pollIntervalMs: env.POLL_INTERVAL_MS,
+    /** Name of the shared "live" group (shown before the nickname in the tree). */
+    liveGroupName: env.LIVE_GROUP_NAME,
+    /** Prefix for the per-user stream-link groups, e.g. `🔴 stream.example.com/alice`. */
+    streamGroupPrefix: env.STREAM_GROUP_PREFIX,
+  }));
+
+export type Config = z.infer<typeof configSchema>;
+
+/** The validated runtime config, evaluated once against `process.env` on startup. */
+export const config: Config = configSchema.parse(process.env);

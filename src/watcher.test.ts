@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { loadConfig } from "./config.ts";
+import { configSchema } from "./config.ts";
 import { logger } from "./logger.ts";
 import type { ServerGroupRef } from "./teamspeak.ts";
 import { Watcher } from "./watcher.ts";
@@ -8,7 +8,7 @@ logger.level = 0; // keep test output quiet
 
 const LIVE_SGID = "100";
 
-const config = loadConfig({
+const config = configSchema.parse({
   BROADCAST_BOX_API_URL: "http://broadcast-box:8080",
   BROADCAST_BOX_ADMIN_TOKEN: "secret",
   PUBLIC_STREAM_HOST: "https://stream.example.com/",
