@@ -18,7 +18,9 @@
   },
   "dependencies": {
     "consola": "^3.4.2",
-    "ts3-nodejs-library": "^3.5.3"
+    "ky": "^2.0.2",
+    "ts3-nodejs-library": "^3.5.3",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@timche/oxc-configs": "^1.0.6",
