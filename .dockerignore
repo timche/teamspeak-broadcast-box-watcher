@@ -1,7 +1,7 @@
 node_modules
 watcher
 *.map
-test
+**/*.test.ts
 .env
 .env.local
 .git

@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
-import { loadConfig } from "../src/config.ts";
-import { createLogger } from "../src/logger.ts";
-import type { TemporaryGroup } from "../src/teamspeak.ts";
-import { Watcher } from "../src/watcher.ts";
+import { loadConfig } from "./config.ts";
+import { createLogger } from "./logger.ts";
+import type { TemporaryGroup } from "./teamspeak.ts";
+import { Watcher } from "./watcher.ts";
 
 const config = loadConfig({
   BROADCAST_BOX_API_URL: "http://broadcast-box:8080",

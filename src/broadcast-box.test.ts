@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { BroadcastBoxClient } from "../src/broadcast-box.ts";
-import { loadConfig } from "../src/config.ts";
-import { createLogger } from "../src/logger.ts";
+import { BroadcastBoxClient } from "./broadcast-box.ts";
+import { loadConfig } from "./config.ts";
+import { createLogger } from "./logger.ts";
 
 function configForUrl(apiUrl: string) {
   return loadConfig({
