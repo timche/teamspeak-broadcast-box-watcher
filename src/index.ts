@@ -22,7 +22,7 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const logger = createLogger(config.logLevel);
 
-  logger.info("Starting teamspeak-broadcast-box-watcher");
+  logger.info("Starting bbox-ts-live");
   logger.debug(
     `Broadcast Box: ${config.broadcastBox.apiUrl} · public host: ${config.publicStreamHost} · ` +
       `poll: ${config.pollIntervalMs}ms · prefix: "${config.groupPrefix}"`,

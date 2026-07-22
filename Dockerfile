@@ -14,7 +14,7 @@ RUN bun install --frozen-lockfile --ignore-scripts
 # so the runtime image needs neither Bun nor node_modules.
 COPY tsconfig.json ./
 COPY src ./src
-RUN bun build --compile --minify --sourcemap src/index.ts --outfile watcher
+RUN bun build --compile --minify --sourcemap src/index.ts --outfile bbox-ts-live
 
 # ---- Runtime stage: minimal glibc base with just the binary ----
 FROM debian:bookworm-slim AS runtime
@@ -26,9 +26,9 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
-COPY --from=build /app/watcher /usr/local/bin/watcher
+COPY --from=build /app/bbox-ts-live /usr/local/bin/bbox-ts-live
 
 # Run as the non-root user provided by the base image.
 USER nobody
 
-ENTRYPOINT ["/usr/local/bin/watcher"]
+ENTRYPOINT ["/usr/local/bin/bbox-ts-live"]

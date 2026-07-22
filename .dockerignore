@@ -1,5 +1,5 @@
 node_modules
-watcher
+bbox-ts-live
 *.map
 **/*.test.ts
 .env

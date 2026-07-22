@@ -1,5 +1,5 @@
 {
-  "name": "teamspeak-broadcast-box-watcher",
+  "name": "bbox-ts-live",
   "version": "0.1.0",
   "description": "Assigns a temporary TeamSpeak server group to users who are live on Broadcast Box",
   "license": "MIT",
@@ -7,7 +7,7 @@
   "type": "module",
   "module": "src/index.ts",
   "scripts": {
-    "build": "bun build --compile --minify --sourcemap src/index.ts --outfile watcher",
+    "build": "bun build --compile --minify --sourcemap src/index.ts --outfile bbox-ts-live",
     "dev": "bun --watch src/index.ts",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",

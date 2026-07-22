@@ -80,7 +80,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       serverPort: integer(env, "TEAMSPEAK_SERVER_PORT", 9987),
       username: optional(env, "TEAMSPEAK_QUERY_USERNAME", "serveradmin"),
       password: required(env, "TEAMSPEAK_QUERY_PASSWORD"),
-      nickname: optional(env, "TEAMSPEAK_QUERY_NICKNAME", "broadcast-watcher"),
+      nickname: optional(env, "TEAMSPEAK_QUERY_NICKNAME", "bbox-ts-live"),
     },
     pollIntervalMs: integer(env, "POLL_INTERVAL_MS", 10_000),
     groupPrefix: optional(env, "GROUP_PREFIX", "🔴"),

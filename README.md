@@ -1,4 +1,4 @@
-# teamspeak-broadcast-box-watcher
+# bbox-ts-live
 
 Watches a [Broadcast Box](https://github.com/Glimesh/broadcast-box) instance and, whenever a TeamSpeak user is **live**, assigns that user a temporary TeamSpeak server group named after their stream link — prefixed with 🔴. When the stream stops, the group is removed again.
 
@@ -27,20 +27,20 @@ On `SIGINT`/`SIGTERM` the watcher removes all temporary groups and disconnects.
 
 Everything is configured via environment variables (see [`.env.example`](./.env.example)):
 
-| Variable                    | Required | Default             | Description                                                                                                                      |
-| --------------------------- | :------: | ------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `BROADCAST_BOX_API_URL`     |    ✅    | –                   | Internal Broadcast Box API base URL, e.g. `http://broadcast-box:8080`                                                            |
-| `BROADCAST_BOX_ADMIN_TOKEN` |    ✅    | –                   | Admin token in **cleartext**. Base64-encoded automatically before being sent. Must match Broadcast Box's `FRONTEND_ADMIN_TOKEN`. |
-| `PUBLIC_STREAM_HOST`        |    ✅    | –                   | Public host shown in the group name, e.g. `stream.example.com` (scheme/trailing slash stripped)                                   |
-| `TEAMSPEAK_HOST`            |    ✅    | –                   | TeamSpeak ServerQuery host                                                                                                       |
-| `TEAMSPEAK_QUERY_PORT`      |          | `10011`             | ServerQuery (RAW) port                                                                                                           |
-| `TEAMSPEAK_SERVER_PORT`     |          | `9987`              | Voice port of the virtual server to select                                                                                       |
-| `TEAMSPEAK_QUERY_USERNAME`  |          | `serveradmin`       | ServerQuery login                                                                                                                |
-| `TEAMSPEAK_QUERY_PASSWORD`  |    ✅    | –                   | ServerQuery password                                                                                                             |
-| `TEAMSPEAK_QUERY_NICKNAME`  |          | `broadcast-watcher` | Nickname the query client connects with                                                                                          |
-| `POLL_INTERVAL_MS`          |          | `10000`             | Reconcile interval in milliseconds                                                                                               |
-| `GROUP_PREFIX`              |          | `🔴`                | Prefix for the temporary group name                                                                                              |
-| `LOG_LEVEL`                 |          | `info`              | `debug` \| `info` \| `warn` \| `error`                                                                                           |
+| Variable                    | Required | Default        | Description                                                                                                                      |
+| --------------------------- | :------: | -------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `BROADCAST_BOX_API_URL`     |    ✅    | –              | Internal Broadcast Box API base URL, e.g. `http://broadcast-box:8080`                                                            |
+| `BROADCAST_BOX_ADMIN_TOKEN` |    ✅    | –              | Admin token in **cleartext**. Base64-encoded automatically before being sent. Must match Broadcast Box's `FRONTEND_ADMIN_TOKEN`. |
+| `PUBLIC_STREAM_HOST`        |    ✅    | –              | Public host shown in the group name, e.g. `stream.example.com` (scheme/trailing slash stripped)                                   |
+| `TEAMSPEAK_HOST`            |    ✅    | –              | TeamSpeak ServerQuery host                                                                                                       |
+| `TEAMSPEAK_QUERY_PORT`      |          | `10011`        | ServerQuery (RAW) port                                                                                                           |
+| `TEAMSPEAK_SERVER_PORT`     |          | `9987`         | Voice port of the virtual server to select                                                                                       |
+| `TEAMSPEAK_QUERY_USERNAME`  |          | `serveradmin`  | ServerQuery login                                                                                                                |
+| `TEAMSPEAK_QUERY_PASSWORD`  |    ✅    | –              | ServerQuery password                                                                                                             |
+| `TEAMSPEAK_QUERY_NICKNAME`  |          | `bbox-ts-live` | Nickname the query client connects with                                                                                          |
+| `POLL_INTERVAL_MS`          |          | `10000`        | Reconcile interval in milliseconds                                                                                               |
+| `GROUP_PREFIX`              |          | `🔴`           | Prefix for the temporary group name                                                                                              |
+| `LOG_LEVEL`                 |          | `info`         | `debug` \| `info` \| `warn` \| `error`                                                                                           |
 
 The `BROADCAST_BOX_ADMIN_TOKEN` value is the token in cleartext; the watcher sends it as `Authorization: Bearer <base64(token)>`.
 
@@ -59,7 +59,7 @@ bun run lint           # oxlint
 bun run lint:fix       # oxlint --fix
 bun run format         # oxfmt (write) / bun run format:check
 bun test               # unit tests
-bun run build          # compile a standalone ./watcher binary
+bun run build          # compile a standalone ./bbox-ts-live binary
 ```
 
 Tooling: [`ky`](https://github.com/sindresorhus/ky) + [`zod`](https://zod.dev) for validated HTTP, [`consola`](https://github.com/unjs/consola) for logging, and [`@timche/oxc-configs`](https://www.npmjs.com/package/@timche/oxc-configs) (oxlint + oxfmt) for linting/formatting.
@@ -71,8 +71,8 @@ A [lefthook](https://lefthook.dev) `pre-commit` hook runs oxfmt and `oxlint --fi
 The image compiles the app into a single self-contained binary (embedding the Bun runtime) and ships it on a minimal `debian:bookworm-slim` base.
 
 ```sh
-docker build -t teamspeak-broadcast-box-watcher .
-docker run --rm --env-file .env teamspeak-broadcast-box-watcher
+docker build -t bbox-ts-live .
+docker run --rm --env-file .env bbox-ts-live
 ```
 
 ### docker compose

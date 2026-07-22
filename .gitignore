@@ -2,7 +2,7 @@
 node_modules/
 
 # Compiled binary + build artifacts
-/watcher
+/bbox-ts-live
 *.map
 
 # Environment
