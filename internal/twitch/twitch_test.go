@@ -212,6 +212,33 @@ func TestBatchesAt100Logins(t *testing.T) {
 	}
 }
 
+func TestStreamsServerErrorSurfaced(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/token") {
+			writeJSON(w, map[string]any{"access_token": "token-1", "expires_in": 3600})
+			return
+		}
+		http.Error(w, `{"error":"Internal Server Error","status":500,"message":"boom"}`, http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	host := strings.TrimPrefix(server.URL, "http://")
+	client, err := twitch.New(twitch.Options{
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		HTTPClient:   &http.Client{Transport: rewriteTransport{host: host}},
+	})
+	if err != nil {
+		t.Fatalf("twitch.New: %v", err)
+	}
+
+	if _, err := client.FetchLiveUsernames(context.Background(), []string{"azn"}); err == nil {
+		t.Fatal("expected an error on a 500 streams response")
+	} else if !strings.Contains(err.Error(), "500") {
+		t.Errorf("error = %q, want it to mention 500", err.Error())
+	}
+}
+
 func TestNormalizesReturnedLoginsToLowercase(t *testing.T) {
 	client, _ := newStub(t, []string{"azn"}, 0)
 	// Server lowercases in its response already; assert the wrapper keeps them lowercase.

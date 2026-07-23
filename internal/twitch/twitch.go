@@ -74,6 +74,9 @@ func (c *Client) FetchLiveUsernames(_ context.Context, usernames []string) (map[
 	}
 
 	for _, logins := range chunk(usernames, maxLoginsPerRequest) {
+		// First defaults to 20 server-side, so it is set to the batch size to
+		// return every live channel in the batch on one page. (The original
+		// TypeScript omitted it and silently reported only the first 20.)
 		resp, err := c.helix.GetStreams(&helix.StreamsParams{
 			UserLogins: logins,
 			First:      maxLoginsPerRequest,

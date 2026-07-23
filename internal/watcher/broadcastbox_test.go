@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -187,6 +188,17 @@ func TestBroadcastBoxReconcile(t *testing.T) {
 			if err := w.Reconcile(context.Background()); err != nil {
 				t.Fatalf("Reconcile error: %v", err)
 			}
+
+			// Sort before comparing: the reconciler iterates maps in random order,
+			// so record order is not significant (each entry is independent).
+			sort.Strings(ts.added)
+			sort.Strings(ts.removed)
+			sort.Strings(ts.created)
+			sort.Strings(ts.deleted)
+			sort.Strings(tc.wantAdded)
+			sort.Strings(tc.wantRemoved)
+			sort.Strings(tc.wantCreated)
+			sort.Strings(tc.wantDeleted)
 
 			assertEqual(t, "added", ts.added, tc.wantAdded)
 			assertEqual(t, "removed", ts.removed, tc.wantRemoved)

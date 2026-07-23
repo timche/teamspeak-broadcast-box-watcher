@@ -126,6 +126,11 @@ func buildWatchers(ctx context.Context, cfg config.Config, ts *teamspeak.Manager
 // then sleeps until the next tick or shutdown.
 func pollLoop(ctx context.Context, interval time.Duration, watchers []namedWatcher) {
 	for {
+		// Honour a shutdown that arrived before or during the last cycle before
+		// starting another reconcile.
+		if ctx.Err() != nil {
+			return
+		}
 		for _, w := range watchers {
 			reconcileSafely(ctx, w)
 		}
