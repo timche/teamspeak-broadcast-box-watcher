@@ -57,6 +57,12 @@ func TestParseDefaultsAndTransforms(t *testing.T) {
 	if cfg.TeamSpeak.QueryPort != 10011 {
 		t.Errorf("QueryPort = %d, want 10011", cfg.TeamSpeak.QueryPort)
 	}
+	if cfg.TeamSpeak.QueryRate != 2 {
+		t.Errorf("QueryRate = %v, want 2", cfg.TeamSpeak.QueryRate)
+	}
+	if cfg.TeamSpeak.QueryBurst != 3 {
+		t.Errorf("QueryBurst = %d, want 3", cfg.TeamSpeak.QueryBurst)
+	}
 }
 
 func TestParsePublicStreamHostStripsSchemeAndSlashes(t *testing.T) {
@@ -106,6 +112,17 @@ func TestParseTemplateSemantics(t *testing.T) {
 	}
 }
 
+func TestParseQueryRateZeroDisablesThrottle(t *testing.T) {
+	t.Parallel()
+	cfg, err := config.Parse(mergeEnv(validBroadcastBox(), map[string]string{"TEAMSPEAK_QUERY_RATE": "0"}))
+	if err != nil {
+		t.Fatalf("Parse() error: %v", err)
+	}
+	if cfg.TeamSpeak.QueryRate != 0 {
+		t.Errorf("QueryRate = %v, want 0 (throttling disabled)", cfg.TeamSpeak.QueryRate)
+	}
+}
+
 func TestParseValidationErrors(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -147,6 +164,14 @@ func TestParseValidationErrors(t *testing.T) {
 		{
 			"non-positive poll interval",
 			mergeEnv(validBroadcastBox(), map[string]string{"POLL_INTERVAL_MS": "0"}),
+		},
+		{
+			"negative query rate",
+			mergeEnv(validBroadcastBox(), map[string]string{"TEAMSPEAK_QUERY_RATE": "-1"}),
+		},
+		{
+			"non-positive query burst",
+			mergeEnv(validBroadcastBox(), map[string]string{"TEAMSPEAK_QUERY_BURST": "0"}),
 		},
 	}
 	for _, tc := range tests {

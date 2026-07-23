@@ -53,6 +53,8 @@ func run() error {
 		Username:   cfg.TeamSpeak.Username,
 		Password:   cfg.TeamSpeak.Password,
 		Nickname:   cfg.TeamSpeak.Nickname,
+		QueryRate:  cfg.TeamSpeak.QueryRate,
+		QueryBurst: cfg.TeamSpeak.QueryBurst,
 	})
 	if err != nil {
 		return err

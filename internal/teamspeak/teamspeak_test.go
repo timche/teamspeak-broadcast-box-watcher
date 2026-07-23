@@ -31,9 +31,14 @@ type fakeServer struct {
 
 	mu        sync.Mutex
 	responses map[string]string
-	conns     map[net.Conn]struct{}
-	commands  []string
-	closed    bool
+	// transient responses are served for the first transientLeft[cmd] calls of a
+	// command, then the server falls back to responses[cmd]. Used to simulate a
+	// transient anti-flood rejection that clears on retry.
+	transient     map[string]string
+	transientLeft map[string]int
+	conns         map[net.Conn]struct{}
+	commands      []string
+	closed        bool
 }
 
 func newFakeServer(t *testing.T) *fakeServer {
@@ -43,9 +48,11 @@ func newFakeServer(t *testing.T) *fakeServer {
 		t.Fatalf("listen: %v", err)
 	}
 	s := &fakeServer{
-		ln:        ln,
-		responses: defaultResponses(),
-		conns:     make(map[net.Conn]struct{}),
+		ln:            ln,
+		responses:     defaultResponses(),
+		transient:     make(map[string]string),
+		transientLeft: make(map[string]int),
+		conns:         make(map[net.Conn]struct{}),
 	}
 	go s.serve()
 	t.Cleanup(s.Close)
@@ -69,6 +76,28 @@ func (s *fakeServer) set(cmd, resp string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.responses[cmd] = resp
+}
+
+// setTransient makes cmd reply with resp for its next count calls, then revert to
+// the normal response.
+func (s *fakeServer) setTransient(cmd, resp string, count int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.transient[cmd] = resp
+	s.transientLeft[cmd] = count
+}
+
+// callCount returns how many times a command's first token has been received.
+func (s *fakeServer) callCount(cmd string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for _, c := range s.commands {
+		if strings.SplitN(c, " ", 2)[0] == cmd {
+			n++
+		}
+	}
+	return n
 }
 
 // lastCommand returns the most recent raw command line whose first token matches
@@ -122,6 +151,10 @@ func (s *fakeServer) handle(conn net.Conn) {
 		s.mu.Lock()
 		s.commands = append(s.commands, line)
 		resp, ok := s.responses[cmd]
+		if s.transientLeft[cmd] > 0 {
+			resp, ok = s.transient[cmd], true
+			s.transientLeft[cmd]--
+		}
 		s.mu.Unlock()
 
 		switch {
@@ -177,6 +210,7 @@ func (s *fakeServer) options() teamspeak.ConnectOptions {
 		Password:          "pw",
 		Nickname:          "tsl",
 		ReconnectInterval: 10 * time.Millisecond,
+		FloodCooldown:     5 * time.Millisecond,
 	}
 }
 
@@ -306,6 +340,69 @@ func TestListGroupMemberDbidsEmptyResponse(t *testing.T) {
 	}
 	if len(members) != 0 {
 		t.Errorf("members = %v, want empty", members)
+	}
+}
+
+func TestFloodErrorRetriesAndSucceeds(t *testing.T) {
+	s := newFakeServer(t)
+	// The server rejects the first two calls with the anti-flood error, then
+	// answers normally; the command must transparently retry and succeed.
+	s.setTransient("servergroupclientlist", `error id=524 msg=client\sis\sflooding`, 2)
+	m := connect(t, s)
+
+	members, err := m.ListGroupMemberDbids(context.Background(), "100")
+	if err != nil {
+		t.Fatalf("ListGroupMemberDbids: %v", err)
+	}
+	if len(members) != 2 {
+		t.Fatalf("members = %v, want 2 entries after flood retry", members)
+	}
+	if got := s.callCount("servergroupclientlist"); got != 3 {
+		t.Errorf("servergroupclientlist called %d times, want 3 (2 flood + 1 success)", got)
+	}
+}
+
+func TestFloodErrorGivesUpAfterMaxRetries(t *testing.T) {
+	s := newFakeServer(t)
+	// A server that floods indefinitely must not loop forever: after a bounded
+	// number of retries the flood error is returned so the poll loop can log it.
+	s.set("servergroupclientlist", `error id=524 msg=client\sis\sflooding`)
+	m := connect(t, s)
+
+	_, err := m.ListGroupMemberDbids(context.Background(), "100")
+	if err == nil {
+		t.Fatal("ListGroupMemberDbids: want flood error, got nil")
+	}
+	if !strings.Contains(err.Error(), "flooding") {
+		t.Errorf("error = %v, want anti-flood error", err)
+	}
+	// One initial attempt plus the bounded retries; no reconnect (524 is a
+	// protocol error, not a connection failure).
+	if got := s.callCount("servergroupclientlist"); got != 4 {
+		t.Errorf("servergroupclientlist called %d times, want 4 (1 + 3 retries)", got)
+	}
+}
+
+func TestQueryRateThrottlesCommands(t *testing.T) {
+	s := newFakeServer(t)
+	opts := s.options()
+	// One command every 20ms, no burst: three commands must take at least ~40ms
+	// (the first is immediate, the next two each wait one interval).
+	opts.QueryRate = 50
+	opts.QueryBurst = 1
+	m, err := teamspeak.Connect(opts)
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+
+	start := time.Now()
+	for i := 0; i < 3; i++ {
+		if _, err := m.ListClients(context.Background()); err != nil {
+			t.Fatalf("ListClients: %v", err)
+		}
+	}
+	if elapsed := time.Since(start); elapsed < 30*time.Millisecond {
+		t.Errorf("3 throttled commands took %v, want >= ~40ms", elapsed)
 	}
 }
 

@@ -52,6 +52,12 @@ type TeamSpeak struct {
 	Username   string
 	Password   string
 	Nickname   string
+	// QueryRate caps ServerQuery commands per second to stay under TeamSpeak's
+	// anti-flood limit (default 10 commands / 3s). 0 disables client-side
+	// throttling — use it only when the query IP is flood-whitelisted.
+	QueryRate float64
+	// QueryBurst is the command burst allowance layered on top of QueryRate.
+	QueryBurst int
 }
 
 // Config is the validated runtime configuration.
@@ -94,6 +100,10 @@ type raw struct {
 	TeamSpeakQueryUsername string `env:"TEAMSPEAK_QUERY_USERNAME" envDefault:"serveradmin"`
 	TeamSpeakQueryPassword string `env:"TEAMSPEAK_QUERY_PASSWORD,required"`
 	TeamSpeakQueryNickname string `env:"TEAMSPEAK_QUERY_NICKNAME" envDefault:"teamspeak-stream-live"`
+	// Anti-flood pacing: default 2 commands/s with a burst of 3 keeps a poll
+	// cycle under TeamSpeak's default 10-commands-per-3-seconds limit.
+	TeamSpeakQueryRate  float64 `env:"TEAMSPEAK_QUERY_RATE" envDefault:"2"`
+	TeamSpeakQueryBurst int     `env:"TEAMSPEAK_QUERY_BURST" envDefault:"3"`
 
 	PollIntervalMs int `env:"POLL_INTERVAL_MS" envDefault:"10000"`
 }
@@ -132,6 +142,12 @@ func Parse(environ map[string]string) (Config, error) {
 	if r.PollIntervalMs <= 0 {
 		return Config{}, fmt.Errorf("environment variable POLL_INTERVAL_MS must be a positive integer")
 	}
+	if r.TeamSpeakQueryRate < 0 {
+		return Config{}, fmt.Errorf("environment variable TEAMSPEAK_QUERY_RATE must be zero or positive")
+	}
+	if r.TeamSpeakQueryBurst < 1 {
+		return Config{}, fmt.Errorf("environment variable TEAMSPEAK_QUERY_BURST must be a positive integer")
+	}
 
 	if err := validateFeatures(r); err != nil {
 		return Config{}, err
@@ -145,6 +161,8 @@ func Parse(environ map[string]string) (Config, error) {
 			Username:   r.TeamSpeakQueryUsername,
 			Password:   r.TeamSpeakQueryPassword,
 			Nickname:   r.TeamSpeakQueryNickname,
+			QueryRate:  r.TeamSpeakQueryRate,
+			QueryBurst: r.TeamSpeakQueryBurst,
 		},
 		PollInterval: time.Duration(r.PollIntervalMs) * time.Millisecond,
 	}

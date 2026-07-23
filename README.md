@@ -81,6 +81,8 @@ At least one feature (Broadcast Box or Twitch) must be configured; a feature is 
 | `TEAMSPEAK_QUERY_USERNAME`     |               | `serveradmin`                    | ServerQuery login                                                                                                                |
 | `TEAMSPEAK_QUERY_PASSWORD`     |      ✅       | –                                | ServerQuery password                                                                                                             |
 | `TEAMSPEAK_QUERY_NICKNAME`     |               | `teamspeak-stream-live`          | Nickname the query client connects with                                                                                          |
+| `TEAMSPEAK_QUERY_RATE`         |               | `2`                              | Max ServerQuery commands per second, to stay under TeamSpeak's anti-flood limit. `0` disables throttling (flood-whitelisted IPs) |
+| `TEAMSPEAK_QUERY_BURST`        |               | `3`                              | ServerQuery command burst allowance on top of `TEAMSPEAK_QUERY_RATE`                                                             |
 | `POLL_INTERVAL_MS`             |               | `10000`                          | Reconcile interval in milliseconds (shared by both features)                                                                     |
 | `LOG_LEVEL`                    |               | `info`                           | `debug` \| `info` \| `warn` \| `error`                                                                                           |
 
